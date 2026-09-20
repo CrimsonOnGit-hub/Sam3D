@@ -6,7 +6,7 @@
   <title>Sam3D</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -16,24 +16,90 @@
   <!-- Speech bubbles & labels 2D overlay -->
   <div id="labels-overlay"></div>
 
-  <!-- ONLY UI: Click-to-Move Controller -->
-  <div class="click-to-move-dock">
-    <div class="dock-label">Click to Move:</div>
-    <div class="dock-sonas">
-      <button class="sona-pill active red" data-who="Sam">
-        <span class="pill-dot"></span>
-        <span>Sam</span>
+  <!-- First Person Crosshair & Status -->
+  <div id="fp-crosshair" class="fp-crosshair"></div>
+  <div id="fp-hud" class="fp-hud">
+    <span class="fp-tag">FIRST PERSON ACTIVE</span>
+    <span>Use <b>W, A, S, D</b> to walk • Mouse to look around • Click to interact</span>
+  </div>
+
+  <!-- Top Chat Log Feed -->
+  <div id="chat-feed" class="chat-feed">
+    <!-- Real-time chat messages appear here -->
+  </div>
+
+  <!-- Interactive Dock: Character, Hands, Spawn, WASD First Person & Chat -->
+  <div class="interactive-dock">
+    <!-- Row 1: Sona Selection & First Person Button & Hand Gestures & Spawning -->
+    <div class="dock-top-row">
+      <div class="dock-group">
+        <span class="dock-title">Sona:</span>
+        <div class="dock-sonas">
+          <button class="sona-pill active red" data-who="Sam">
+            <span class="pill-dot"></span>
+            <span>Sam</span>
+          </button>
+          <button class="sona-pill green" data-who="Cam">
+            <span class="pill-dot"></span>
+            <span>Cam</span>
+          </button>
+          <button class="sona-pill blue" data-who="Evil Sam">
+            <span class="pill-dot"></span>
+            <span>Evil Sam</span>
+          </button>
+          <button class="sona-pill gold" data-who="Player">
+            <span class="pill-dot"></span>
+            <span>Player</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="dock-divider"></div>
+
+      <!-- NEW UI BUTTON: Toggle First Person WASD Mode -->
+      <button id="btn-toggle-fp" class="fp-mode-btn" title="Toggle First Person WASD Mode for Player">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 8 3-3 3 3M8 9l-3 3 3 3M16 9l3 3-3 3M9 16l3 3 3-3"/></svg>
+        <span id="fp-btn-text">🎮 First Person (WASD)</span>
       </button>
-      <button class="sona-pill green" data-who="Cam">
-        <span class="pill-dot"></span>
-        <span>Cam</span>
-      </button>
-      <button class="sona-pill blue" data-who="Evil Sam">
-        <span class="pill-dot"></span>
-        <span>Evil Sam</span>
-      </button>
+
+      <div class="dock-divider"></div>
+
+      <!-- Hand Moves -->
+      <div class="dock-group">
+        <span class="dock-title">Hands:</span>
+        <button id="btn-hand-wave" class="action-btn" title="Wave hand">👋 Wave</button>
+        <button id="btn-hand-up" class="action-btn" title="Raise hands">🙌 Hands Up</button>
+        <button id="btn-hand-drop" class="action-btn" title="Drop held object">✨ Drop</button>
+      </div>
+
+      <div class="dock-divider"></div>
+
+      <!-- Object Spawning -->
+      <div class="dock-group">
+        <span class="dock-title">Spawn:</span>
+        <button class="spawn-btn" data-type="cube" title="Spawn Gold Cube">📦 Cube</button>
+        <button class="spawn-btn" data-type="orb" title="Spawn Glowing Orb">🔮 Orb</button>
+        <button class="spawn-btn" data-type="diamond" title="Spawn Crystal">💎 Crystal</button>
+      </div>
     </div>
-    <div class="dock-hint" id="dock-hint">Click anywhere on the plane to move Sam</div>
+
+    <!-- Row 2: Chat bar & Click hint -->
+    <div class="dock-bottom-row">
+      <form id="chat-form" class="chat-bar" autocomplete="off">
+        <input 
+          type="text" 
+          id="chat-input" 
+          placeholder="Chat as Sam... (Press Enter to speak)" 
+          maxlength="120"
+          spellcheck="false"
+        >
+        <button type="submit" id="btn-send-chat" class="send-btn">
+          <span>Speak</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+        </button>
+      </form>
+      <div class="dock-hint" id="dock-hint">Click plane to move • Click objects to hold them</div>
+    </div>
   </div>
 
   <!-- Toast Notification Container -->

@@ -1,41 +1,116 @@
 {
-  "Sam": {
-    "name": "Sam",
-    "color": "#ff3b30",
-    "accentColor": "#ff6961",
-    "position": {
-      "x": 12,
-      "y": 0,
-      "z": -8
+  "characters": {
+    "Sam": {
+      "name": "Sam",
+      "color": "#ff3b30",
+      "accentColor": "#ff6961",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotationY": 0,
+      "lastCommand": "[initial] 0, 0, 0",
+      "updatedAt": 1789932255630
     },
-    "rotationY": 0,
-    "lastCommand": "[move] 12, 0, -8",
-    "updatedAt": 1789931713524
+    "Cam": {
+      "name": "Cam",
+      "color": "#34c759",
+      "accentColor": "#30d158",
+      "position": {
+        "x": -6,
+        "y": 0,
+        "z": -3
+      },
+      "rotationY": 0,
+      "lastCommand": "[initial] -6, 0, -3",
+      "updatedAt": 1789932255630
+    },
+    "Evil Sam": {
+      "name": "Evil Sam",
+      "color": "#0a84ff",
+      "accentColor": "#5ac8fa",
+      "position": {
+        "x": 6,
+        "y": 0,
+        "z": 3
+      },
+      "rotationY": 0,
+      "lastCommand": "[initial] 6, 0, 3",
+      "updatedAt": 1789932255630
+    },
+    "Player": {
+      "name": "Player",
+      "color": "#f59e0b",
+      "accentColor": "#fbbf24",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 6
+      },
+      "rotationY": 0,
+      "lastCommand": "[wasd] 0, 0, 6",
+      "updatedAt": 1789932255630
+    }
   },
-  "Cam": {
-    "name": "Cam",
-    "color": "#34c759",
-    "accentColor": "#30d158",
-    "position": {
-      "x": -6,
-      "y": 0,
-      "z": -3
+  "worldObjects": {
+    "obj-init-1": {
+      "id": "obj-init-1",
+      "type": "cube",
+      "color": "#f59e0b",
+      "position": {
+        "x": 2,
+        "y": 0.5,
+        "z": 2
+      },
+      "heldBy": null,
+      "createdAt": 1789932255630
     },
-    "rotationY": 0,
-    "lastCommand": "[initial] -6, 0, -3",
-    "updatedAt": 1789931263770
+    "obj-init-2": {
+      "id": "obj-init-2",
+      "type": "orb",
+      "color": "#8b5cf6",
+      "position": {
+        "x": -3,
+        "y": 0.5,
+        "z": 4
+      },
+      "heldBy": null,
+      "createdAt": 1789932255630
+    },
+    "obj-1789932264885-patz": {
+      "id": "obj-1789932264885-patz",
+      "type": "orb",
+      "color": "#a855f7",
+      "position": {
+        "x": -5.4,
+        "y": 0.5,
+        "z": -1.2
+      },
+      "heldBy": null,
+      "createdAt": 1789932264885
+    }
   },
-  "Evil Sam": {
-    "name": "Evil Sam",
-    "color": "#0a84ff",
-    "accentColor": "#5ac8fa",
-    "position": {
-      "x": 6,
-      "y": 0,
-      "z": 3
+  "characterHands": {
+    "Sam": {
+      "action": "idle",
+      "heldObjectId": null,
+      "updatedAt": 1789932255630
     },
-    "rotationY": 0,
-    "lastCommand": "[initial] 6, 0, 3",
-    "updatedAt": 1789931263770
+    "Cam": {
+      "action": "idle",
+      "heldObjectId": null,
+      "updatedAt": 1789932255630
+    },
+    "Evil Sam": {
+      "action": "wave",
+      "heldObjectId": null,
+      "updatedAt": 1789932264903
+    },
+    "Player": {
+      "action": "idle",
+      "heldObjectId": null,
+      "updatedAt": 1789932255630
+    }
   }
 }
