@@ -414,7 +414,7 @@ async function executeMoveRequest(who, whereStr) {
 
   // Update HUD live previews
   document.getElementById('spec-body-preview').textContent = bodyJson;
-  const curlCmd = `curl -X PUT http://localhost:3000/Move \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify(bodyPayload)}'`;
+  const curlCmd = `curl -X PUT ${window.location.origin}/Move \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify(bodyPayload)}'`;
   document.getElementById('curl-text').textContent = curlCmd;
 
   const startTime = performance.now();
@@ -731,7 +731,7 @@ function updateLivePreview() {
     Where: cleanVal
   };
   document.getElementById('spec-body-preview').textContent = JSON.stringify(preview, null, 2);
-  const curlCmd = `curl -X PUT http://localhost:3000/Move \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify(preview)}'`;
+  const curlCmd = `curl -X PUT ${window.location.origin}/Move \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify(preview)}'`;
   document.getElementById('curl-text').textContent = curlCmd;
 }
 
