@@ -832,12 +832,17 @@ function triggerHitEffect(charName, message) {
 // --- Universal State Synchronization ---
 let isInitialStateLoaded = false;
 
+function isAnyMovementKeyPressed() {
+  return !!(keysDown['KeyW'] || keysDown['KeyA'] || keysDown['KeyS'] || keysDown['KeyD'] ||
+            keysDown['ArrowUp'] || keysDown['ArrowLeft'] || keysDown['ArrowDown'] || keysDown['ArrowRight']);
+}
+
 function syncCharactersFromServer(serverCharacters, animate = true) {
   if (!serverCharacters) return;
 
   for (const key in serverCharacters) {
-    // Skip local Player interpolation if currently controlling in first person
-    if (key === 'Player' && isFirstPerson) continue;
+    // Skip local Player interpolation if currently controlling with WASD or in first person
+    if (key === 'Player' && (isFirstPerson || isAnyMovementKeyPressed())) continue;
 
     const sChar = serverCharacters[key];
     const lChar = characters[key];
@@ -1030,18 +1035,20 @@ function setFirstPersonMode(enable) {
     btnToggleFp.classList.add('active');
     fpBtnText.textContent = 'Exit First Person (ESC)';
 
-    // Hide Player's head mesh in first person so it doesn't obstruct camera view
-    player.headGroup.visible = false;
+    // Completely hide Player's body and shadow so you cannot see your body in first person
+    player.bodyRig.visible = false;
+    player.shadowMesh.visible = false;
     showToast('Entered First Person. Use W, A, S, D to walk!');
   } else {
     controls.enabled = true;
     fpHud.style.display = 'none';
     fpCrosshair.style.display = 'none';
     btnToggleFp.classList.remove('active');
-    fpBtnText.textContent = '🎮 First Person (WASD)';
+    fpBtnText.textContent = '🎮 First Person View';
 
-    // Restore head visibility and reset camera
-    player.headGroup.visible = true;
+    // Restore body visibility and reset camera to overview
+    player.bodyRig.visible = true;
+    player.shadowMesh.visible = true;
     camera.position.copy(DEFAULT_CAM_POS);
     controls.target.copy(DEFAULT_CAM_TARGET);
     showToast('Exited First Person to Overview.');
@@ -1054,6 +1061,7 @@ btnToggleFp.addEventListener('click', () => {
 
 // Keyboard Listeners for WASD
 window.addEventListener('keydown', (e) => {
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
   keysDown[e.code] = true;
   if (e.code === 'Escape' && isFirstPerson) {
     setFirstPersonMode(false);
@@ -1218,19 +1226,20 @@ function animate() {
   const delta = clock.getDelta();
   const time = clock.getElapsedTime();
 
-  // 1. First Person WASD Mode Handler
+  // 1. Movement Controller (WASD for Player in both First Person AND Third Person Overview)
+  const player = characters['Player'];
+  let isPlayerActiveWASD = false;
+
+  const moveVec = new THREE.Vector3();
+  if (keysDown['KeyW'] || keysDown['ArrowUp']) moveVec.z -= 1;
+  if (keysDown['KeyS'] || keysDown['ArrowDown']) moveVec.z += 1;
+  if (keysDown['KeyA'] || keysDown['ArrowLeft']) moveVec.x -= 1;
+  if (keysDown['KeyD'] || keysDown['ArrowRight']) moveVec.x += 1;
+
   if (isFirstPerson) {
-    const player = characters['Player'];
     const moveSpeed = 14 * delta;
-    const moveVec = new THREE.Vector3();
-
-    // Calculate move direction relative to camera yaw
-    if (keysDown['KeyW'] || keysDown['ArrowUp']) moveVec.z -= 1;
-    if (keysDown['KeyS'] || keysDown['ArrowDown']) moveVec.z += 1;
-    if (keysDown['KeyA'] || keysDown['ArrowLeft']) moveVec.x -= 1;
-    if (keysDown['KeyD'] || keysDown['ArrowRight']) moveVec.x += 1;
-
     if (moveVec.lengthSq() > 0) {
+      isPlayerActiveWASD = true;
       moveVec.normalize();
       moveVec.applyAxisAngle(new THREE.Vector3(0, 1, 0), fpYaw);
       player.currentPos.addScaledVector(moveVec, moveSpeed);
@@ -1239,6 +1248,7 @@ function animate() {
       player.currentPos.x = Math.max(-48, Math.min(48, player.currentPos.x));
       player.currentPos.z = Math.max(-48, Math.min(48, player.currentPos.z));
       player.currentPos.y = getTerrainHeight(player.currentPos.x, player.currentPos.z);
+      player.targetPos.copy(player.currentPos);
       player.root.position.copy(player.currentPos);
 
       // Walk bobbing
@@ -1274,11 +1284,79 @@ function animate() {
     );
     camera.lookAt(lookTarget);
 
-    // Visible floating hands in first person view
-    player.leftHand.position.set(-0.55, 1.35, 0.9);
-    player.rightHand.position.set(0.55, 1.35, 0.9);
+    // Completely hide body in first person
+    player.bodyRig.visible = false;
+    player.shadowMesh.visible = false;
   } else {
     controls.update();
+
+    // Overview Mode: WASD moves Player directly across the terrain!
+    if (moveVec.lengthSq() > 0) {
+      isPlayerActiveWASD = true;
+      moveVec.normalize();
+
+      // Camera horizontal forward and right vectors
+      const camForward = new THREE.Vector3();
+      camera.getWorldDirection(camForward);
+      camForward.y = 0;
+      camForward.normalize();
+
+      const camRight = new THREE.Vector3();
+      camRight.crossVectors(camForward, new THREE.Vector3(0, 1, 0)).normalize();
+
+      const worldMoveDir = new THREE.Vector3()
+        .addScaledVector(camForward, -moveVec.z)
+        .addScaledVector(camRight, moveVec.x)
+        .normalize();
+
+      const moveSpeed = 13.5 * delta;
+      player.currentPos.addScaledVector(worldMoveDir, moveSpeed);
+
+      player.currentPos.x = Math.max(-48, Math.min(48, player.currentPos.x));
+      player.currentPos.z = Math.max(-48, Math.min(48, player.currentPos.z));
+      player.currentPos.y = getTerrainHeight(player.currentPos.x, player.currentPos.z);
+      player.targetPos.copy(player.currentPos);
+      player.root.position.copy(player.currentPos);
+      player.isMoving = true;
+
+      // Smoothly rotate Player towards movement direction
+      const targetAngle = Math.atan2(worldMoveDir.x, worldMoveDir.z);
+      let diff = targetAngle - player.bodyRig.rotation.y;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      player.bodyRig.rotation.y += diff * 0.22;
+
+      // Walk bobbing & hand swinging
+      player.walkCycle += delta * 14;
+      player.bodyRig.position.y = Math.abs(Math.sin(player.walkCycle)) * 0.35;
+      player.leftHand.position.z = Math.sin(player.walkCycle) * 0.45;
+      player.rightHand.position.z = -Math.sin(player.walkCycle) * 0.45;
+
+      // Keep held object anchored to player
+      if (player.heldObjectId && worldObjects[player.heldObjectId]) {
+        const mesh = worldObjectMeshes[player.heldObjectId];
+        if (mesh) {
+          const rad = player.bodyRig.rotation.y;
+          mesh.position.set(
+            player.currentPos.x + Math.sin(rad) * 0.85,
+            player.currentPos.y + 1.25 + Math.sin(time * 3) * 0.05,
+            player.currentPos.z + Math.cos(rad) * 0.85
+          );
+        }
+      }
+
+      if (Date.now() - lastPlayerSyncTime > 120) {
+        lastPlayerSyncTime = Date.now();
+        fetch('/api/player/move', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            Where: `${player.currentPos.x.toFixed(1)}, ${player.currentPos.y.toFixed(1)}, ${player.currentPos.z.toFixed(1)}`,
+            rotationY: player.bodyRig.rotation.y
+          })
+        }).catch(() => {});
+      }
+    }
   }
 
   // 2. Animate Characters & Hand Actions
@@ -1286,7 +1364,7 @@ function animate() {
     const char = characters[key];
 
     // Distance to movement target (if not active WASD player)
-    if (!(isFirstPerson && key === 'Player')) {
+    if (!(key === 'Player' && (isFirstPerson || isPlayerActiveWASD))) {
       const dist = char.currentPos.distanceTo(char.targetPos);
       if (dist > 0.05) {
         char.isMoving = true;
