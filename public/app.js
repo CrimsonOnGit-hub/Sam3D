@@ -405,7 +405,6 @@ function updateSonaUICard(who, x, y, z, status) {
 
 // --- HTTP Request Engine (PUT /Move) ---
 let selectedWho = 'Sam';
-let clickToMoveActive = false;
 
 async function executeMoveRequest(who, whereStr) {
   const endpoint = '/Move';
@@ -413,14 +412,6 @@ async function executeMoveRequest(who, whereStr) {
     Who: who,
     Where: whereStr
   };
-  const bodyJson = JSON.stringify(bodyPayload, null, 2);
-
-  // Update HUD live previews
-  document.getElementById('spec-body-preview').textContent = bodyJson;
-  const curlCmd = `curl -X PUT ${window.location.origin}/Move \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify(bodyPayload)}'`;
-  document.getElementById('curl-text').textContent = curlCmd;
-
-  const startTime = performance.now();
 
   try {
     const res = await fetch(endpoint, {
@@ -431,32 +422,28 @@ async function executeMoveRequest(who, whereStr) {
       body: JSON.stringify(bodyPayload)
     });
 
-    const elapsed = Math.round(performance.now() - startTime);
-
     if (res.ok) {
       const data = await res.json();
-      logNetworkRequest('PUT', endpoint, res.status, `Success (${elapsed}ms) - ${who} -> ${whereStr}`);
+      // Server returns Who and Where
+      const returnWho = data.Who || who;
+      const returnWhere = data.Where || whereStr;
       
-      // Parse coordinates to animate
-      const targetCoords = data.character ? data.character.position : parseWhereClient(whereStr);
+      const targetCoords = data.character ? data.character.position : parseWhereClient(returnWhere);
       if (targetCoords) {
-        applyCharacterMove(who, targetCoords.x, targetCoords.y, targetCoords.z, `[move] ${whereStr}`);
+        applyCharacterMove(returnWho, targetCoords.x, targetCoords.y, targetCoords.z, `[move] ${returnWhere}`);
       }
-      showToast(`${who} moving to [${whereStr}]`);
+      showToast(`${returnWho} moved to [${returnWhere}]`);
     } else {
       const errData = await res.json().catch(() => ({}));
       const errMsg = errData.error || `HTTP ${res.status}`;
-      logNetworkRequest('PUT', endpoint, res.status, `Error: ${errMsg}`, true);
       showToast(`Error: ${errMsg}`);
     }
   } catch (err) {
-    // Fallback if running standalone or offline without Node server active
-    const elapsed = Math.round(performance.now() - startTime);
-    logNetworkRequest('PUT', endpoint, 200, `Executed locally (${elapsed}ms) - ${who} -> ${whereStr}`);
+    // Fallback if running standalone or offline
     const coords = parseWhereClient(whereStr);
     if (coords) {
       applyCharacterMove(who, coords.x, coords.y, coords.z, `[move] ${whereStr}`);
-      showToast(`${who} moving to [${whereStr}]`);
+      showToast(`${who} moved to [${whereStr}]`);
     } else {
       showToast(`Invalid coordinates: "${whereStr}"`);
     }
@@ -471,27 +458,6 @@ function parseWhereClient(str) {
   if (parts.length === 2) return { x: parts[0], y: 0, z: parts[1] };
   if (parts.length >= 3) return { x: parts[0], y: parts[1], z: parts[2] };
   return null;
-}
-
-// Network Log UI Helper
-function logNetworkRequest(method, url, status, detail, isError = false) {
-  const list = document.getElementById('network-logs');
-  const entry = document.createElement('div');
-  entry.className = `log-entry ${isError ? 'error' : 'success'}`;
-  
-  const timeStr = new Date().toLocaleTimeString();
-  entry.innerHTML = `
-    <div class="log-top-row">
-      <span class="log-method">${method} ${url}</span>
-      <span class="log-status ${isError ? 'err' : ''}">${status}</span>
-    </div>
-    <div class="log-detail">${detail} • ${timeStr}</div>
-  `;
-
-  list.prepend(entry);
-  if (list.children.length > 20) {
-    list.lastElementChild.remove();
-  }
 }
 
 // --- Universal Multi-Instance Real-Time Synchronization Engine ---
@@ -590,108 +556,25 @@ function initSSE() {
 }
 initSSE();
 
-// --- UI Interaction & Event Listeners ---
-
-// Sona selection
-const sonaCards = document.querySelectorAll('.sona-card');
-const selectWho = document.getElementById('select-who');
+// --- ONLY UI: Click-to-Move Dock Controller ---
+const sonaPills = document.querySelectorAll('.sona-pill');
+const dockHint = document.getElementById('dock-hint');
 
 function selectSona(name) {
   selectedWho = name;
-  selectWho.value = name;
-  sonaCards.forEach(card => {
-    card.classList.toggle('active', card.dataset.who === name);
+  sonaPills.forEach(p => {
+    p.classList.toggle('active', p.dataset.who === name);
   });
-
-  // Update Direct input values to current character position
-  const char = characters[name];
-  if (char) {
-    document.getElementById('direct-x').value = Math.round(char.targetPos.x);
-    document.getElementById('direct-y').value = Math.round(char.targetPos.y);
-    document.getElementById('direct-z').value = Math.round(char.targetPos.z);
-  }
-
-  // Update preview
-  updateLivePreview();
+  if (dockHint) dockHint.textContent = `Click anywhere on the plane to move ${name}`;
 }
 
-sonaCards.forEach(card => {
-  card.addEventListener('click', (e) => {
-    if (e.target.closest('.focus-btn')) return;
-    selectSona(card.dataset.who);
+sonaPills.forEach(pill => {
+  pill.addEventListener('click', () => {
+    selectSona(pill.dataset.who);
   });
 });
 
-selectWho.addEventListener('change', (e) => {
-  selectSona(e.target.value);
-});
-
-// Camera Focus Buttons
-document.querySelectorAll('.focus-btn').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const who = btn.dataset.focus;
-    const char = characters[who];
-    if (char) {
-      focusOnPosition(char.currentPos);
-    }
-  });
-});
-
-function focusOnPosition(target) {
-  const startTarget = controls.target.clone();
-  const destTarget = new THREE.Vector3(target.x, target.y + 1, target.z);
-  
-  let progress = 0;
-  function stepAnim() {
-    progress += 0.05;
-    controls.target.lerpVectors(startTarget, destTarget, Math.min(progress, 1));
-    if (progress < 1) {
-      requestAnimationFrame(stepAnim);
-    }
-  }
-  stepAnim();
-}
-
-// Reset Overview View
-document.getElementById('btn-reset-cam').addEventListener('click', () => {
-  const startPos = camera.position.clone();
-  const startTarget = controls.target.clone();
-  let progress = 0;
-
-  function stepReset() {
-    progress += 0.05;
-    camera.position.lerpVectors(startPos, DEFAULT_CAM_POS, Math.min(progress, 1));
-    controls.target.lerpVectors(startTarget, DEFAULT_CAM_TARGET, Math.min(progress, 1));
-    if (progress < 1) {
-      requestAnimationFrame(stepReset);
-    }
-  }
-  stepReset();
-  showToast('Reset camera to full plane view');
-});
-
-// Toggle Grid
-let gridVisible = true;
-document.getElementById('btn-toggle-grid').addEventListener('click', function() {
-  gridVisible = !gridVisible;
-  gridHelper.visible = gridVisible;
-  axisGroup.visible = gridVisible;
-  this.classList.toggle('active', gridVisible);
-});
-
-// Click-to-Move Toggle
-const btnClickMove = document.getElementById('btn-click-move');
-const clickLabel = document.getElementById('click-mode-label');
-btnClickMove.addEventListener('click', () => {
-  clickToMoveActive = !clickToMoveActive;
-  btnClickMove.classList.toggle('active', clickToMoveActive);
-  clickLabel.textContent = clickToMoveActive ? 'Click-to-Move: ON' : 'Click-to-Move: Off';
-  targetBeacon.visible = clickToMoveActive;
-  showToast(clickToMoveActive ? `Click on plane to move ${selectedWho}` : 'Click-to-Move disabled');
-});
-
-// Raycasting for Plane Hover and Click
+// Raycasting for Plane Hover and Click-to-Move
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
@@ -699,112 +582,42 @@ window.addEventListener('mousemove', (e) => {
   mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
 
-  if (clickToMoveActive) {
-    raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObject(planeMesh);
-    if (intersects.length > 0) {
-      const pt = intersects[0].point;
-      targetBeacon.position.set(pt.x, 0.04, pt.z);
-      targetBeacon.visible = true;
-    }
-  }
-});
-
-renderer.domElement.addEventListener('click', (e) => {
-  if (!clickToMoveActive) return;
-
-  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-
   raycaster.setFromCamera(mouse, camera);
   const intersects = raycaster.intersectObject(planeMesh);
   if (intersects.length > 0) {
     const pt = intersects[0].point;
+    targetBeacon.position.set(pt.x, 0.04, pt.z);
+    targetBeacon.visible = true;
+  } else {
+    targetBeacon.visible = false;
+  }
+});
+
+renderer.domElement.addEventListener('click', (e) => {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+
+  // Check if clicked directly on a character in 3D to select them
+  for (const key in characters) {
+    const hits = raycaster.intersectObjects(characters[key].bodyRig.children, true);
+    if (hits.length > 0) {
+      selectSona(key);
+      showToast(`Selected ${key}`);
+      return;
+    }
+  }
+
+  // Click on ground plane to move selected character
+  const groundHits = raycaster.intersectObject(planeMesh);
+  if (groundHits.length > 0) {
+    const pt = groundHits[0].point;
     const x = Math.round(pt.x * 10) / 10;
     const z = Math.round(pt.z * 10) / 10;
     const whereStr = `${x}, 0, ${z}`;
     executeMoveRequest(selectedWho, whereStr);
   }
-});
-
-// Direct Coordinates Button
-document.getElementById('btn-send-direct').addEventListener('click', () => {
-  const x = Number(document.getElementById('direct-x').value) || 0;
-  const y = Number(document.getElementById('direct-y').value) || 0;
-  const z = Number(document.getElementById('direct-z').value) || 0;
-  executeMoveRequest(selectedWho, `${x}, ${y}, ${z}`);
-});
-
-// Command Input Form
-const commandForm = document.getElementById('command-form');
-const commandInput = document.getElementById('command-input');
-
-commandForm.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const raw = commandInput.value.trim();
-  if (!raw) return;
-
-  let targetWho = selectedWho;
-  let targetWhere = raw;
-
-  // Support syntax: "Sam: [move] 10, 0, 5" or "[move] 10, 0, 5"
-  if (raw.includes(':')) {
-    const colonIdx = raw.indexOf(':');
-    const whoPart = raw.slice(0, colonIdx).trim().toLowerCase();
-    if (whoPart === 'sam') targetWho = 'Sam';
-    else if (whoPart === 'cam') targetWho = 'Cam';
-    else if (whoPart === 'evil sam' || whoPart === 'evil') targetWho = 'Evil Sam';
-    targetWhere = raw.slice(colonIdx + 1).trim();
-  }
-
-  // Strip leading [move] if user typed it
-  if (targetWhere.toLowerCase().startsWith('[move]')) {
-    targetWhere = targetWhere.slice(6).trim();
-  }
-
-  executeMoveRequest(targetWho, targetWhere);
-  commandInput.value = '';
-});
-
-// Command shortcut chips
-document.querySelectorAll('.chip').forEach(chip => {
-  chip.addEventListener('click', () => {
-    let cmd = chip.dataset.cmd;
-    if (cmd.startsWith('[move]')) cmd = cmd.slice(6).trim();
-    executeMoveRequest(selectedWho, cmd);
-  });
-});
-
-// Update live preview when typing or changing options
-function updateLivePreview() {
-  const val = commandInput.value.trim() || '10, 0, 5';
-  let cleanVal = val;
-  if (cleanVal.toLowerCase().startsWith('[move]')) cleanVal = cleanVal.slice(6).trim();
-
-  const preview = {
-    Who: selectedWho,
-    Where: cleanVal
-  };
-  document.getElementById('spec-body-preview').textContent = JSON.stringify(preview, null, 2);
-  const curlCmd = `curl -X PUT ${window.location.origin}/Move \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify(preview)}'`;
-  document.getElementById('curl-text').textContent = curlCmd;
-}
-
-commandInput.addEventListener('input', updateLivePreview);
-
-// Copy cURL button
-document.getElementById('btn-copy-curl').addEventListener('click', () => {
-  const curlText = document.getElementById('curl-text').textContent;
-  navigator.clipboard.writeText(curlText).then(() => {
-    showToast('cURL snippet copied to clipboard');
-  }).catch(() => {
-    showToast('Failed to copy to clipboard');
-  });
-});
-
-// Clear logs button
-document.getElementById('btn-clear-logs').addEventListener('click', () => {
-  document.getElementById('network-logs').innerHTML = '';
 });
 
 // --- Screen Space Label Projection ---

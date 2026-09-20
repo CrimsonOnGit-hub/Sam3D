@@ -252,10 +252,13 @@ const server = http.createServer((req, res) => {
 
         broadcastEvent('move', moveEvent);
 
+        const whereStr = `${coords.x}, ${coords.y}, ${coords.z}`;
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           ok: true,
-          message: `${whoKey} moved to [${coords.x}, ${coords.y}, ${coords.z}]`,
+          Who: whoKey,
+          Where: whereStr,
           character: charObj
         }));
       } catch (err) {
@@ -266,14 +269,33 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Static file serving
-  let reqPath = pathname === '/' ? '/index.html' : pathname;
+  // Root endpoint: Pure API, No UI
+  if (req.method === 'GET' && pathname === '/') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status: 'online',
+      service: 'Sam3D API',
+      endpoints: {
+        move: 'PUT /Move',
+        characters: 'GET /api/characters',
+        stream: 'GET /api/stream',
+        ui: 'GET /public.html'
+      }
+    }, null, 2));
+    return;
+  }
+
+  // UI endpoint: ONLY on /public.html or /public
+  let reqPath = pathname;
+  if (reqPath === '/public') reqPath = '/public.html';
   const safePath = path.normalize(reqPath).replace(/^(\.\.[/\\])+/, '');
   let filePath = path.join(PUBLIC_DIR, safePath);
 
   fs.stat(filePath, (err, stats) => {
     if (err || !stats.isFile()) {
-      filePath = path.join(PUBLIC_DIR, 'index.html');
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Endpoint not found' }));
+      return;
     }
 
     const ext = path.extname(filePath).toLowerCase();
@@ -281,8 +303,8 @@ const server = http.createServer((req, res) => {
 
     fs.readFile(filePath, (readErr, content) => {
       if (readErr) {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('File not found');
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'Failed to read asset' }));
         return;
       }
       res.writeHead(200, { 'Content-Type': contentType });

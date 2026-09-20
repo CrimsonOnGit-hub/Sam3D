@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sam3D</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 3D Canvas -->
+  <div id="canvas-container"></div>
+
+  <!-- Speech bubbles & labels 2D overlay -->
+  <div id="labels-overlay"></div>
+
+  <!-- ONLY UI: Click-to-Move Controller -->
+  <div class="click-to-move-dock">
+    <div class="dock-label">Click to Move:</div>
+    <div class="dock-sonas">
+      <button class="sona-pill active red" data-who="Sam">
+        <span class="pill-dot"></span>
+        <span>Sam</span>
+      </button>
+      <button class="sona-pill green" data-who="Cam">
+        <span class="pill-dot"></span>
+        <span>Cam</span>
+      </button>
+      <button class="sona-pill blue" data-who="Evil Sam">
+        <span class="pill-dot"></span>
+        <span>Evil Sam</span>
+      </button>
+    </div>
+    <div class="dock-hint" id="dock-hint">Click anywhere on the plane to move Sam</div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- Three.js ES Module & OrbitControls Import Map -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
