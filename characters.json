@@ -5,26 +5,42 @@
       "color": "#ff3b30",
       "accentColor": "#ff6961",
       "position": {
-        "x": 0,
+        "x": 2,
         "y": 0,
-        "z": 0
+        "z": 3
       },
       "rotationY": 0,
-      "lastCommand": "[initial] 0, 0, 0",
-      "updatedAt": 1789932255630
+      "lastCommand": "[move] 2, 0, 3",
+      "lastMessage": null,
+      "updatedAt": 1789933373032
     },
     "Cam": {
       "name": "Cam",
       "color": "#34c759",
       "accentColor": "#30d158",
       "position": {
-        "x": -6,
-        "y": 0,
-        "z": -3
+        "x": -5.82,
+        "y": -0.15,
+        "z": -2.4
       },
       "rotationY": 0,
-      "lastCommand": "[initial] -6, 0, -3",
-      "updatedAt": 1789932255630
+      "lastCommand": "[feet] left foot step +1.2m -> [-5.82, -0.15, -2.4]",
+      "lastMessage": null,
+      "updatedAt": 1789933373043,
+      "feet": {
+        "left": {
+          "x": -6,
+          "y": -0.17,
+          "z": -1.8
+        },
+        "right": {
+          "x": -5.65,
+          "y": 0,
+          "z": -3
+        },
+        "lastStep": "left",
+        "stepCount": 1
+      }
     },
     "Evil Sam": {
       "name": "Evil Sam",
@@ -36,8 +52,20 @@
         "z": 3
       },
       "rotationY": 0,
-      "lastCommand": "[initial] 6, 0, 3",
-      "updatedAt": 1789932255630
+      "lastCommand": "[move] 6, 0, 3",
+      "lastMessage": null,
+      "updatedAt": 1789933385769,
+      "lastHit": {
+        "id": "hit-1789933385769",
+        "target": "Evil Sam",
+        "thrownBy": "Evil Sam",
+        "objectId": "obj-1789933384149-drw7",
+        "objectType": "cube",
+        "speed": 4.6,
+        "message": "Evil Sam was hit by a cube thrown by Evil Sam!",
+        "timestamp": 1789933385769
+      },
+      "hitCount": 2
     },
     "Player": {
       "name": "Player",
@@ -50,7 +78,11 @@
       },
       "rotationY": 0,
       "lastCommand": "[wasd] 0, 0, 6",
-      "updatedAt": 1789932255630
+      "lastMessage": {
+        "message": "Hello world from Player!",
+        "timestamp": 1789933369801
+      },
+      "updatedAt": 1789933369801
     }
   },
   "worldObjects": {
@@ -59,12 +91,13 @@
       "type": "cube",
       "color": "#f59e0b",
       "position": {
-        "x": 2,
-        "y": 0.5,
-        "z": 2
+        "x": 24,
+        "y": 0.51,
+        "z": 3
       },
       "heldBy": null,
-      "createdAt": 1789932255630
+      "createdAt": 1789932255630,
+      "thrownAt": 1789933376632
     },
     "obj-init-2": {
       "id": "obj-init-2",
@@ -89,6 +122,25 @@
       },
       "heldBy": null,
       "createdAt": 1789932264885
+    },
+    "obj-1789933384149-drw7": {
+      "id": "obj-1789933384149-drw7",
+      "type": "cube",
+      "color": "#f59e0b",
+      "position": {
+        "x": 6.41,
+        "y": 2.28,
+        "z": 3
+      },
+      "heldBy": null,
+      "createdAt": 1789933384149,
+      "velocity": {
+        "x": 1.0641636206520113,
+        "y": -5.6797579723380975,
+        "z": 0
+      },
+      "thrownBy": "Evil Sam",
+      "thrownAt": 1789933385769
     }
   },
   "characterHands": {
@@ -112,5 +164,13 @@
       "heldObjectId": null,
       "updatedAt": 1789932255630
     }
-  }
+  },
+  "chatMessages": [
+    {
+      "id": "msg-1789933369801-zmzm",
+      "who": "Player",
+      "message": "Hello world from Player!",
+      "timestamp": 1789933369801
+    }
+  ]
 }

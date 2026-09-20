@@ -19,6 +19,7 @@ const characters = {
     position: { x: 0, y: 0, z: 0 },
     rotationY: 0,
     lastCommand: '[initial] 0, 0, 0',
+    lastMessage: null,
     updatedAt: Date.now()
   },
   'Cam': {
@@ -28,6 +29,7 @@ const characters = {
     position: { x: -6, y: 0, z: -3 },
     rotationY: 0,
     lastCommand: '[initial] -6, 0, -3',
+    lastMessage: null,
     updatedAt: Date.now()
   },
   'Evil Sam': {
@@ -37,6 +39,7 @@ const characters = {
     position: { x: 6, y: 0, z: 3 },
     rotationY: 0,
     lastCommand: '[initial] 6, 0, 3',
+    lastMessage: null,
     updatedAt: Date.now()
   },
   'Player': {
@@ -46,6 +49,7 @@ const characters = {
     position: { x: 0, y: 0, z: 6 },
     rotationY: 0,
     lastCommand: '[wasd] 0, 0, 6',
+    lastMessage: null,
     updatedAt: Date.now()
   }
 };
@@ -78,7 +82,7 @@ const characterHands = {
   'Player': { action: 'idle', heldObjectId: null, updatedAt: Date.now() }
 };
 
-// Chat message log (most recent 40)
+// Chat message log (most recent 100)
 const chatMessages = [];
 
 // Persistence functions
@@ -92,6 +96,7 @@ function loadPersistentState() {
           if (characters[k] && data.characters[k].position) {
             characters[k].position = data.characters[k].position;
             characters[k].lastCommand = data.characters[k].lastCommand || characters[k].lastCommand;
+            characters[k].lastMessage = data.characters[k].lastMessage || characters[k].lastMessage;
             characters[k].updatedAt = data.characters[k].updatedAt || Date.now();
           }
         }
@@ -101,6 +106,10 @@ function loadPersistentState() {
       }
       if (data.characterHands && typeof data.characterHands === 'object') {
         Object.assign(characterHands, data.characterHands);
+      }
+      if (Array.isArray(data.chatMessages)) {
+        chatMessages.length = 0;
+        chatMessages.push(...data.chatMessages);
       }
       console.log('Loaded persisted state from disk.');
     }
@@ -114,7 +123,8 @@ function savePersistentState() {
     const payload = {
       characters,
       worldObjects,
-      characterHands
+      characterHands,
+      chatMessages: chatMessages.slice(-100)
     };
     fs.writeFileSync(STATE_FILE, JSON.stringify(payload, null, 2), 'utf-8');
   } catch (err) {
@@ -148,7 +158,7 @@ function findCharacterKey(input) {
   if (clean === 'sam') return 'Sam';
   if (clean === 'cam') return 'Cam';
   if (clean === 'evil sam' || clean === 'evilsam' || clean === 'evil_sam') return 'Evil Sam';
-  if (clean === 'player' || clean === 'gold sam' || clean === 'goldsam' || clean === 'yellow sam') return 'Player';
+  if (clean === 'player' || clean === 'gold sam' || clean === 'goldsam' || clean === 'yellow sam' || clean === 'gold' || clean === 'user' || clean === 'me' || clean === 'player1') return 'Player';
   return null;
 }
 
@@ -182,6 +192,125 @@ function parseWhere(whereInput) {
 
   return null;
 }
+
+// 3D Contoured Terrain Elevation Function
+function getTerrainHeight(x, z) {
+  return Math.sin(x * 0.12) * Math.cos(z * 0.12) * 0.75 + Math.cos(x * 0.06 + z * 0.06) * 0.35;
+}
+
+// Real-time Physics Engine for Thrown Objects and Character Collisions
+function updatePhysics() {
+  const dt = 0.05; // 50ms tick (20 FPS)
+  let hasActivePhysics = false;
+
+  for (const id in worldObjects) {
+    const obj = worldObjects[id];
+    if (!obj.velocity || obj.heldBy) continue;
+
+    hasActivePhysics = true;
+    let { x: vx, y: vy, z: vz } = obj.velocity;
+
+    // Apply gravity
+    vy -= 9.8 * dt;
+
+    // Update position
+    let px = obj.position.x + vx * dt;
+    let py = obj.position.y + vy * dt;
+    let pz = obj.position.z + vz * dt;
+
+    // World boundary clamping
+    px = Math.max(-24, Math.min(24, px));
+    pz = Math.max(-24, Math.min(24, pz));
+
+    const groundY = getTerrainHeight(px, pz) + 0.35;
+
+    // Ground bounce & friction
+    if (py <= groundY) {
+      py = groundY;
+      vy = -vy * 0.52; // restitution
+      vx *= 0.82; // ground friction
+      vz *= 0.82;
+
+      // Rest condition
+      if (Math.abs(vy) < 0.3 && Math.hypot(vx, vz) < 0.25) {
+        delete obj.velocity;
+        delete obj.thrownBy;
+        obj.position = { x: Math.round(px * 100) / 100, y: Math.round(py * 100) / 100, z: Math.round(pz * 100) / 100 };
+        broadcastEvent('object_rest', { id: obj.id, position: obj.position });
+        continue;
+      }
+    }
+
+    // Check collision against all characters (objects bounce off people)
+    for (const charName in characters) {
+      const char = characters[charName];
+      const cx = char.position.x;
+      const cy = char.position.y + 1.1; // approximate torso height
+      const cz = char.position.z;
+
+      const dist = Math.hypot(px - cx, py - cy, pz - cz);
+      const hitRadius = 1.15;
+
+      const isThrower = obj.thrownBy === charName;
+      const timeSinceThrow = Date.now() - (obj.thrownAt || 0);
+
+      // Bounce off character if within radius (and not immediate thrower cooldown)
+      if (dist < hitRadius && (!isThrower || timeSinceThrow > 350)) {
+        const nx = (px - cx) / (dist || 1);
+        const ny = (py - cy) / (dist || 1);
+        const nz = (pz - cz) / (dist || 1);
+
+        // Reflect velocity with bounce impulse
+        const vDotN = vx * nx + vy * ny + vz * nz;
+        vx = (vx - 1.8 * vDotN * nx) * 0.75;
+        vy = Math.max(1.8, (vy - 1.8 * vDotN * ny) * 0.75 + 1.2);
+        vz = (vz - 1.8 * vDotN * nz) * 0.75;
+
+        // Push outside character body
+        px = cx + nx * (hitRadius + 0.1);
+        py = cy + ny * (hitRadius + 0.1);
+        pz = cz + nz * (hitRadius + 0.1);
+
+        const impactSpeed = Math.round(Math.hypot(vx, vy, vz) * 10) / 10;
+        const hitInfo = {
+          id: 'hit-' + Date.now(),
+          target: charName,
+          thrownBy: obj.thrownBy || 'Unknown',
+          objectId: obj.id,
+          objectType: obj.type,
+          speed: impactSpeed,
+          message: `${charName} was hit by a ${obj.type} thrown by ${obj.thrownBy || 'someone'}!`,
+          timestamp: Date.now()
+        };
+
+        char.lastHit = hitInfo;
+        char.hitCount = (char.hitCount || 0) + 1;
+        char.updatedAt = Date.now();
+
+        // Change thrownBy to this character so it doesn't immediately re-hit same frame
+        obj.thrownBy = charName;
+        obj.thrownAt = Date.now();
+
+        savePersistentState();
+        broadcastEvent('hit', hitInfo);
+        break;
+      }
+    }
+
+    obj.position = {
+      x: Math.round(px * 100) / 100,
+      y: Math.round(py * 100) / 100,
+      z: Math.round(pz * 100) / 100
+    };
+    obj.velocity = { x: vx, y: vy, z: vz };
+  }
+
+  if (hasActivePhysics) {
+    broadcastEvent('physics', { worldObjects });
+  }
+}
+
+setInterval(updatePhysics, 50);
 
 function readRequestBody(req) {
   return new Promise((resolve, reject) => {
@@ -286,7 +415,34 @@ const server = http.createServer(async (req, res) => {
       characters,
       worldObjects,
       characterHands,
-      chatMessages: chatMessages.slice(-30)
+      chatMessages: chatMessages.slice(-50),
+      messages: chatMessages.slice(-50)
+    }));
+    return;
+  }
+
+  // GET /Chat or GET /chat or GET /api/chat or GET /messages or GET /api/messages
+  if (req.method === 'GET' && (
+    pathname === '/Chat' || pathname === '/chat' || pathname === '/api/chat' ||
+    pathname === '/messages' || pathname === '/api/messages'
+  )) {
+    const whoFilter = url.searchParams.get('who') || url.searchParams.get('Who');
+    let msgs = chatMessages;
+    if (whoFilter) {
+      const canonicalWho = findCharacterKey(whoFilter);
+      if (canonicalWho) {
+        msgs = chatMessages.filter(m => m.who.toLowerCase() === canonicalWho.toLowerCase());
+      }
+    }
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache'
+    });
+    res.end(JSON.stringify({
+      ok: true,
+      count: msgs.length,
+      messages: msgs,
+      playerMessages: chatMessages.filter(m => m.who === 'Player')
     }));
     return;
   }
@@ -358,6 +514,8 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         Who: whoKey,
         Where: whereStr,
+        lastHit: charObj.lastHit,
+        hitNotification: charObj.lastHit ? charObj.lastHit.message : null,
         character: charObj
       }));
     } catch (err) {
@@ -397,7 +555,13 @@ const server = http.createServer(async (req, res) => {
         });
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, Who: 'Player', Where: `${coords.x}, ${coords.y}, ${coords.z}` }));
+        res.end(JSON.stringify({
+          ok: true,
+          Who: 'Player',
+          Where: `${coords.x}, ${coords.y}, ${coords.z}`,
+          lastHit: charObj.lastHit,
+          hitNotification: charObj.lastHit ? charObj.lastHit.message : null
+        }));
         return;
       }
     } catch (err) {
@@ -407,12 +571,124 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // PUT or POST /move/feet (Foot-by-Foot Movement Endpoint)
+  if ((req.method === 'PUT' || req.method === 'POST') && (pathname.toLowerCase() === '/move/feet' || pathname.toLowerCase() === '/move/foot')) {
+    try {
+      const data = await readRequestBody(req);
+      const whoKey = findCharacterKey(data.Who || data.who || data.sender) || 'Sam';
+      const charObj = characters[whoKey];
+
+      if (whoKey === 'Player' && req.headers['x-source'] !== 'public-html') {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          ok: false,
+          error: "Character 'Player' can only be moved directly from public.html using WASD in first person."
+        }));
+        return;
+      }
+
+      // Initialize feet state if needed
+      if (!charObj.feet) {
+        charObj.feet = {
+          left: { x: Math.round((charObj.position.x - 0.35) * 100) / 100, y: charObj.position.y, z: charObj.position.z },
+          right: { x: Math.round((charObj.position.x + 0.35) * 100) / 100, y: charObj.position.y, z: charObj.position.z },
+          lastStep: 'none',
+          stepCount: 0
+        };
+      }
+
+      const footInput = String(data.Foot || data.foot || (charObj.feet.lastStep === 'left' ? 'right' : 'left')).toLowerCase();
+      const stepFoot = (footInput.includes('r') || footInput === '2') ? 'right' : 'left';
+      const stepDist = Math.max(0.2, Math.min(3.0, Number(data.Step || data.step || 1.0)));
+
+      // Step direction angle
+      let angle = charObj.rotationY || 0;
+      if (data.Angle !== undefined || data.angle !== undefined) {
+        angle = Number(data.Angle !== undefined ? data.Angle : data.angle);
+        charObj.rotationY = angle;
+      }
+      if (data.Direction || data.direction) {
+        const dStr = String(data.Direction || data.direction).toLowerCase();
+        if (dStr === 'backward' || dStr === 'back') angle += Math.PI;
+        else if (dStr === 'left') angle += Math.PI / 2;
+        else if (dStr === 'right') angle -= Math.PI / 2;
+      }
+
+      const forwardX = Math.sin(angle);
+      const forwardZ = Math.cos(angle);
+      const perpX = Math.cos(angle);
+      const perpZ = -Math.sin(angle);
+      const lateralOffset = stepFoot === 'left' ? -0.35 : 0.35;
+
+      const otherFootKey = stepFoot === 'left' ? 'right' : 'left';
+      const anchorFoot = charObj.feet[otherFootKey];
+
+      // New position of stepping foot
+      const newFootX = anchorFoot.x + forwardX * stepDist + perpX * lateralOffset;
+      const newFootZ = anchorFoot.z + forwardZ * stepDist + perpZ * lateralOffset;
+      const newFootY = getTerrainHeight(newFootX, newFootZ);
+
+      charObj.feet[stepFoot] = {
+        x: Math.round(newFootX * 100) / 100,
+        y: Math.round(newFootY * 100) / 100,
+        z: Math.round(newFootZ * 100) / 100
+      };
+      charObj.feet.lastStep = stepFoot;
+      charObj.feet.stepCount = (charObj.feet.stepCount || 0) + 1;
+
+      // Body centers between both feet
+      const newBodyX = Math.round(((charObj.feet.left.x + charObj.feet.right.x) / 2) * 100) / 100;
+      const newBodyZ = Math.round(((charObj.feet.left.z + charObj.feet.right.z) / 2) * 100) / 100;
+      const newBodyY = Math.round(getTerrainHeight(newBodyX, newBodyZ) * 100) / 100;
+
+      charObj.position = { x: newBodyX, y: newBodyY, z: newBodyZ };
+      charObj.lastCommand = `[feet] ${stepFoot} foot step +${stepDist}m -> [${newBodyX}, ${newBodyY}, ${newBodyZ}]`;
+      charObj.updatedAt = Date.now();
+
+      // If holding an object, update object position
+      const heldId = characterHands[whoKey]?.heldObjectId;
+      if (heldId && worldObjects[heldId]) {
+        worldObjects[heldId].position = { x: newBodyX, y: newBodyY + 1.25, z: newBodyZ };
+      }
+
+      savePersistentState();
+
+      broadcastEvent('move', {
+        who: whoKey,
+        where: charObj.position,
+        rotationY: charObj.rotationY,
+        command: charObj.lastCommand,
+        feet: charObj.feet,
+        stepFoot,
+        updatedAt: charObj.updatedAt
+      });
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        ok: true,
+        endpoint: '/move/feet',
+        Who: whoKey,
+        Foot: stepFoot,
+        Step: stepDist,
+        BodyPosition: charObj.position,
+        Feet: charObj.feet,
+        lastHit: charObj.lastHit,
+        hitNotification: charObj.lastHit ? charObj.lastHit.message : null,
+        message: `${whoKey} stepped forward ${stepDist}m with ${stepFoot} foot. Body position is now [${newBodyX}, ${newBodyY}, ${newBodyZ}].`
+      }));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Malformed feet payload: ' + err.message }));
+    }
+    return;
+  }
+
   // POST /Chat or POST /api/chat
   if (req.method === 'POST' && (pathname === '/Chat' || pathname === '/chat' || pathname === '/api/chat')) {
     try {
       const data = await readRequestBody(req);
-      const whoKey = findCharacterKey(data.Who || data.who) || 'Sam';
-      const message = String(data.Message || data.message || '').trim();
+      const whoKey = findCharacterKey(data.Who || data.who || data.sender || data.user || data.author || data.name || data.char) || 'Player';
+      const message = String(data.Message || data.message || data.text || data.content || '').trim();
 
       if (!message) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -428,8 +704,17 @@ const server = http.createServer(async (req, res) => {
       };
 
       chatMessages.push(msgObj);
-      if (chatMessages.length > 50) chatMessages.shift();
+      if (chatMessages.length > 100) chatMessages.shift();
 
+      if (characters[whoKey]) {
+        characters[whoKey].lastMessage = {
+          message,
+          timestamp: msgObj.timestamp
+        };
+        characters[whoKey].updatedAt = Date.now();
+      }
+
+      savePersistentState();
       broadcastEvent('chat', msgObj);
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -437,7 +722,8 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         Who: whoKey,
         Message: message,
-        timestamp: msgObj.timestamp
+        timestamp: msgObj.timestamp,
+        id: msgObj.id
       }));
     } catch (err) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -557,11 +843,109 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         Who: whoKey,
         Action: handState.action,
-        HeldObjectId: handState.heldObjectId
+        HeldObjectId: handState.heldObjectId,
+        lastHit: characters[whoKey]?.lastHit,
+        hitNotification: characters[whoKey]?.lastHit ? characters[whoKey].lastHit.message : null
       }));
     } catch (err) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Malformed JSON payload' }));
+    }
+    return;
+  }
+
+  // POST /Throw or POST /api/throw
+  if (req.method === 'POST' && (pathname === '/Throw' || pathname === '/throw' || pathname === '/api/throw')) {
+    try {
+      const data = await readRequestBody(req);
+      const whoKey = findCharacterKey(data.Who || data.who || data.sender) || 'Player';
+      const charObj = characters[whoKey];
+      const handState = characterHands[whoKey];
+
+      let heldId = handState?.heldObjectId || data.ObjectId || data.objectId;
+      if (!heldId) {
+        // If not holding, find nearest object within 3.5m to throw
+        for (const id in worldObjects) {
+          const obj = worldObjects[id];
+          if (!obj.heldBy) {
+            const d = Math.hypot(obj.position.x - charObj.position.x, obj.position.z - charObj.position.z);
+            if (d < 3.5) {
+              heldId = id;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!heldId || !worldObjects[heldId]) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          ok: false,
+          error: `${whoKey} is not holding an object and none are within reach. Pick up or spawn an object first!`,
+          lastHit: charObj.lastHit,
+          hitNotification: charObj.lastHit?.message || null
+        }));
+        return;
+      }
+
+      const force = Number(data.Force || data.force || 16);
+      let dir = data.Direction || data.direction;
+      if (!dir || typeof dir !== 'object') {
+        const rad = Number(data.RotationY || data.rotationY || charObj.rotationY || 0);
+        dir = {
+          x: Math.sin(rad),
+          y: 0.35,
+          z: Math.cos(rad)
+        };
+      }
+      const dirLen = Math.hypot(dir.x, dir.y || 0, dir.z) || 1;
+      const nx = dir.x / dirLen;
+      const ny = (dir.y || 0.35) / dirLen;
+      const nz = dir.z / dirLen;
+
+      const obj = worldObjects[heldId];
+      obj.heldBy = null;
+      obj.position = {
+        x: Math.round((charObj.position.x + nx * 1.0) * 100) / 100,
+        y: Math.round((charObj.position.y + 1.4) * 100) / 100,
+        z: Math.round((charObj.position.z + nz * 1.0) * 100) / 100
+      };
+      obj.velocity = {
+        x: Math.round(nx * force * 100) / 100,
+        y: Math.round((ny * force + 2.5) * 100) / 100,
+        z: Math.round(nz * force * 100) / 100
+      };
+      obj.thrownBy = whoKey;
+      obj.thrownAt = Date.now();
+
+      handState.heldObjectId = null;
+      handState.action = 'throw';
+      setTimeout(() => {
+        if (handState.action === 'throw') handState.action = 'idle';
+      }, 700);
+
+      savePersistentState();
+      broadcastEvent('throw', {
+        who: whoKey,
+        objectId: heldId,
+        velocity: obj.velocity,
+        position: obj.position,
+        worldObjects
+      });
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        ok: true,
+        Who: whoKey,
+        ThrownObject: heldId,
+        Force: force,
+        lastHit: charObj.lastHit,
+        hitNotification: charObj.lastHit ? charObj.lastHit.message : null,
+        message: `${whoKey} threw ${obj.type} (${heldId}) with force ${force}!`
+      }));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Malformed throw payload: ' + err.message }));
     }
     return;
   }
@@ -574,9 +958,13 @@ const server = http.createServer(async (req, res) => {
       service: 'Sam3D API',
       endpoints: {
         move: 'PUT /Move',
-        chat: 'POST /Chat',
+        move_feet: 'PUT /move/feet',
+        player_move: 'POST /api/player/move',
+        chat_send: 'POST /Chat',
+        chat_history: 'GET /Chat or GET /messages',
         spawn: 'POST /Spawn',
         hand: 'POST /Hand',
+        throw: 'POST /Throw',
         characters: 'GET /api/characters',
         state: 'GET /api/state',
         stream: 'GET /api/stream',

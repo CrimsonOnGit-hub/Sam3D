@@ -59,9 +59,23 @@ const fillLight = new THREE.DirectionalLight(0x88a0c8, 0.6);
 fillLight.position.set(-25, 20, -25);
 scene.add(fillLight);
 
-// --- 3D Plane & Grid ---
+// --- 3D Plane & Terrain ---
 const planeSize = 50;
+
+function getTerrainHeight(x, z) {
+  // Contoured rolling hills elevation
+  return Math.sin(x * 0.12) * Math.cos(z * 0.12) * 0.75 + Math.cos(x * 0.06 + z * 0.06) * 0.35;
+}
+
 const planeGeo = new THREE.PlaneGeometry(planeSize, planeSize, 64, 64);
+const posAttr = planeGeo.attributes.position;
+for (let i = 0; i < posAttr.count; i++) {
+  const vx = posAttr.getX(i);
+  const vy = posAttr.getY(i);
+  posAttr.setZ(i, getTerrainHeight(vx, -vy));
+}
+planeGeo.computeVertexNormals();
+
 const planeMat = new THREE.MeshStandardMaterial({
   color: 0x0f1522,
   roughness: 0.85,
@@ -71,6 +85,18 @@ const planeMesh = new THREE.Mesh(planeGeo, planeMat);
 planeMesh.rotation.x = -Math.PI / 2;
 planeMesh.receiveShadow = true;
 scene.add(planeMesh);
+
+// Topographic Contoured Wireframe
+const terrainWireMat = new THREE.MeshBasicMaterial({
+  color: 0x2e4263,
+  wireframe: true,
+  transparent: true,
+  opacity: 0.25
+});
+const terrainWire = new THREE.Mesh(planeGeo, terrainWireMat);
+terrainWire.rotation.x = -Math.PI / 2;
+terrainWire.position.y = 0.005;
+scene.add(terrainWire);
 
 // Outer Border Rim
 const rimGeo = new THREE.BoxGeometry(planeSize + 1, 0.3, planeSize + 1);
@@ -114,6 +140,131 @@ targetBeacon.add(dotMesh);
 targetBeacon.position.set(0, 0.05, 0);
 targetBeacon.visible = false;
 scene.add(targetBeacon);
+
+// --- Articulated Hand & Finger Factory ---
+function createHandWithFingers(isLeft, bodyMat, accentMat) {
+  const handGroup = new THREE.Group();
+  handGroup.name = isLeft ? 'LeftHand' : 'RightHand';
+
+  // Palm base
+  const palmGeo = new THREE.BoxGeometry(0.24, 0.28, 0.14);
+  const palm = new THREE.Mesh(palmGeo, bodyMat);
+  palm.castShadow = true;
+  handGroup.add(palm);
+
+  // Wrist ring / accent band
+  const cuffGeo = new THREE.TorusGeometry(0.13, 0.026, 12, 24);
+  const cuff = new THREE.Mesh(cuffGeo, accentMat);
+  cuff.rotation.x = Math.PI / 2;
+  cuff.position.y = -0.12;
+  handGroup.add(cuff);
+
+  const fingers = [];
+  // 5 digits: Thumb + Index + Middle + Ring + Pinky
+  const fingerConfigs = [
+    { name: 'thumb', x: isLeft ? 0.13 : -0.13, y: -0.01, z: 0.045, len: 0.13, rad: 0.035, isThumb: true },
+    { name: 'index', x: isLeft ? 0.08 : -0.08, y: 0.15, z: 0.01, len: 0.15, rad: 0.03 },
+    { name: 'middle', x: isLeft ? 0.025 : -0.025, y: 0.165, z: 0.01, len: 0.17, rad: 0.031 },
+    { name: 'ring', x: isLeft ? -0.03 : 0.03, y: 0.15, z: 0.01, len: 0.15, rad: 0.029 },
+    { name: 'pinky', x: isLeft ? -0.085 : 0.085, y: 0.125, z: 0.01, len: 0.12, rad: 0.026 }
+  ];
+
+  for (let i = 0; i < fingerConfigs.length; i++) {
+    const cfg = fingerConfigs[i];
+    const knuckle = new THREE.Group();
+    knuckle.position.set(cfg.x, cfg.y, cfg.z);
+
+    if (cfg.isThumb) {
+      knuckle.rotation.z = isLeft ? -0.7 : 0.7;
+      knuckle.rotation.y = isLeft ? 0.4 : -0.4;
+    }
+
+    // Proximal segment (knuckle to mid-joint)
+    const segLen = cfg.len * 0.58;
+    const segGeo = new THREE.CylinderGeometry(cfg.rad * 0.9, cfg.rad, segLen, 12);
+    const segMesh = new THREE.Mesh(segGeo, bodyMat);
+    segMesh.position.y = segLen / 2;
+    segMesh.castShadow = true;
+    knuckle.add(segMesh);
+
+    // Mid-joint knuckle sphere
+    const midKnuckleGeo = new THREE.SphereGeometry(cfg.rad * 0.95, 10, 10);
+    const midKnuckle = new THREE.Mesh(midKnuckleGeo, accentMat);
+    midKnuckle.position.y = segLen;
+    knuckle.add(midKnuckle);
+
+    // Distal tip phalanx
+    const tipPivot = new THREE.Group();
+    tipPivot.position.y = segLen;
+    knuckle.add(tipPivot);
+
+    const tipLen = cfg.len * 0.46;
+    const tipGeo = new THREE.CylinderGeometry(cfg.rad * 0.75, cfg.rad * 0.9, tipLen, 12);
+    const tipMesh = new THREE.Mesh(tipGeo, accentMat);
+    tipMesh.position.y = tipLen / 2;
+    tipMesh.castShadow = true;
+    tipPivot.add(tipMesh);
+
+    // Finger cap
+    const capGeo = new THREE.SphereGeometry(cfg.rad * 0.75, 10, 10);
+    const capMesh = new THREE.Mesh(capGeo, accentMat);
+    capMesh.position.y = tipLen;
+    tipPivot.add(capMesh);
+
+    handGroup.add(knuckle);
+    fingers.push({
+      config: cfg,
+      knuckle,
+      tipPivot,
+      isThumb: !!cfg.isThumb
+    });
+  }
+
+  handGroup.userData = { fingers, isLeft };
+  return handGroup;
+}
+
+function animateFingers(hand, action, time, isMoving) {
+  if (!hand || !hand.userData || !hand.userData.fingers) return;
+  const { fingers, isLeft } = hand.userData;
+
+  for (let i = 0; i < fingers.length; i++) {
+    const f = fingers[i];
+    if (action === 'hold') {
+      // Gripping held object
+      if (f.isThumb) {
+        f.knuckle.rotation.x = 0.75;
+        f.knuckle.rotation.y = isLeft ? 0.6 : -0.6;
+        f.tipPivot.rotation.x = 0.6;
+      } else {
+        f.knuckle.rotation.x = 1.35 + (i * 0.05);
+        f.tipPivot.rotation.x = 1.15;
+      }
+    } else if (action === 'throw') {
+      // Open hand release forward
+      f.knuckle.rotation.x = -0.4;
+      f.tipPivot.rotation.x = -0.25;
+    } else if (action === 'wave') {
+      // Articulated finger wave
+      f.knuckle.rotation.x = -0.15 + Math.sin(time * 16 + i * 0.6) * 0.45;
+      f.tipPivot.rotation.x = 0.2 + Math.sin(time * 16 + i * 0.6 + 0.3) * 0.35;
+    } else if (action === 'handsup') {
+      // Splayed celebration fingers
+      f.knuckle.rotation.x = -0.3;
+      f.tipPivot.rotation.x = -0.15;
+    } else if (isMoving) {
+      // Natural walking flex
+      const flex = Math.sin(time * 12 + i * 0.4) * 0.22;
+      f.knuckle.rotation.x = 0.35 + flex;
+      f.tipPivot.rotation.x = 0.25 + flex;
+    } else {
+      // Relaxed idle resting curl
+      const breath = Math.sin(time * 2.5 + i * 0.3) * 0.08;
+      f.knuckle.rotation.x = 0.28 + breath;
+      f.tipPivot.rotation.x = 0.22 + breath;
+    }
+  }
+}
 
 // --- Sona 3D Character Rig Factory ---
 function createSonaRig(name, baseColorHex, accentHex) {
@@ -199,16 +350,13 @@ function createSonaRig(name, baseColorHex, accentHex) {
   eyeRight.position.set(0.18, 1.96, 0.63);
   headGroup.add(eyeRight);
 
-  // Floating Hands
-  const handGeo = new THREE.SphereGeometry(0.22, 16, 16);
-  const leftHand = new THREE.Mesh(handGeo, bodyMat);
+  // Floating Hands with articulated Fingers
+  const leftHand = createHandWithFingers(true, bodyMat, accentMat);
   leftHand.position.set(-0.95, 1.15, 0);
-  leftHand.castShadow = true;
   bodyRig.add(leftHand);
 
-  const rightHand = new THREE.Mesh(handGeo, bodyMat);
+  const rightHand = createHandWithFingers(false, bodyMat, accentMat);
   rightHand.position.set(0.95, 1.15, 0);
-  rightHand.castShadow = true;
   bodyRig.add(rightHand);
 
   // Distinct Features per Sona
@@ -318,21 +466,21 @@ for (const key in characters) {
 
 // Initial Spawn Positions
 function setInitialPositions() {
-  characters['Sam'].currentPos.set(0, 0, 0);
-  characters['Sam'].targetPos.set(0, 0, 0);
-  characters['Sam'].root.position.set(0, 0, 0);
+  characters['Sam'].currentPos.set(0, getTerrainHeight(0, 0), 0);
+  characters['Sam'].targetPos.copy(characters['Sam'].currentPos);
+  characters['Sam'].root.position.copy(characters['Sam'].currentPos);
 
-  characters['Cam'].currentPos.set(-6, 0, -3);
-  characters['Cam'].targetPos.set(-6, 0, -3);
-  characters['Cam'].root.position.set(-6, 0, -3);
+  characters['Cam'].currentPos.set(-6, getTerrainHeight(-6, -3), -3);
+  characters['Cam'].targetPos.copy(characters['Cam'].currentPos);
+  characters['Cam'].root.position.copy(characters['Cam'].currentPos);
 
-  characters['Evil Sam'].currentPos.set(6, 0, 3);
-  characters['Evil Sam'].targetPos.set(6, 0, 3);
-  characters['Evil Sam'].root.position.set(6, 0, 3);
+  characters['Evil Sam'].currentPos.set(6, getTerrainHeight(6, 3), 3);
+  characters['Evil Sam'].targetPos.copy(characters['Evil Sam'].currentPos);
+  characters['Evil Sam'].root.position.copy(characters['Evil Sam'].currentPos);
 
-  characters['Player'].currentPos.set(0, 0, 6);
-  characters['Player'].targetPos.set(0, 0, 6);
-  characters['Player'].root.position.set(0, 0, 6);
+  characters['Player'].currentPos.set(0, getTerrainHeight(0, 6), 6);
+  characters['Player'].targetPos.copy(characters['Player'].currentPos);
+  characters['Player'].root.position.copy(characters['Player'].currentPos);
 }
 setInitialPositions();
 
@@ -445,20 +593,21 @@ function showToast(message) {
 }
 
 // --- Character Movement Animation ---
-function applyCharacterMove(who, x, y, z, commandText) {
+function applyCharacterMove(who, x, y, z) {
   const char = characters[who];
   if (!char) return;
 
-  char.targetPos.set(x, y, z);
+  const targetY = (y === 0 || y === undefined || y === null) ? getTerrainHeight(x, z) : Math.max(getTerrainHeight(x, z), y);
+  char.targetPos.set(x, targetY, z);
   char.isMoving = true;
-
-  if (commandText) {
-    showSpeechBubble(char, commandText);
-  }
 }
 
 // --- Chat Feed Helper ---
-function appendChatMessage(who, message) {
+const seenMessageIds = new Set();
+function appendChatMessage(who, message, id = null) {
+  if (id && seenMessageIds.has(id)) return;
+  if (id) seenMessageIds.add(id);
+
   const entry = document.createElement('div');
   entry.className = 'chat-msg-entry';
   const tagClass = who === 'Sam' ? 'sam' : who === 'Cam' ? 'cam' : who === 'Evil Sam' ? 'evil-sam' : 'player';
@@ -467,7 +616,7 @@ function appendChatMessage(who, message) {
     <span class="chat-msg-text">${escapeHtml(message)}</span>
   `;
   chatFeed.appendChild(entry);
-  setTimeout(() => entry.remove(), 8000);
+  setTimeout(() => entry.remove(), 9000);
   if (chatFeed.children.length > 8) {
     chatFeed.firstElementChild.remove();
   }
@@ -504,9 +653,10 @@ async function executeMoveRequest(who, whereStr) {
       const returnWhere = data.Where || whereStr;
       const targetCoords = data.character ? data.character.position : parseWhereClient(returnWhere);
       if (targetCoords) {
-        applyCharacterMove(returnWho, targetCoords.x, targetCoords.y, targetCoords.z, `[move] ${returnWhere}`);
+        applyCharacterMove(returnWho, targetCoords.x, targetCoords.y, targetCoords.z);
       }
       showToast(`${returnWho} moved to [${returnWhere}]`);
+      if (data.hitNotification) triggerHitEffect(returnWho, data.hitNotification);
     } else {
       const errData = await res.json().catch(() => ({}));
       showToast(`Error: ${errData.error || `HTTP ${res.status}`}`);
@@ -514,7 +664,7 @@ async function executeMoveRequest(who, whereStr) {
   } catch (err) {
     const coords = parseWhereClient(whereStr);
     if (coords) {
-      applyCharacterMove(who, coords.x, coords.y, coords.z, `[move] ${whereStr}`);
+      applyCharacterMove(who, coords.x, coords.y, coords.z);
       showToast(`${who} moved to [${whereStr}]`);
     }
   }
@@ -542,7 +692,7 @@ async function sendChatMessage(who, message) {
       const data = await res.json();
       const char = characters[who];
       if (char) showSpeechBubble(char, message);
-      appendChatMessage(who, message);
+      appendChatMessage(who, message, data.id);
     }
   } catch (err) {
     const char = characters[who];
@@ -567,14 +717,13 @@ async function sendSpawnRequest(who, type) {
       }
     }
   } catch (err) {
-    // Local fallback
     const id = 'obj-' + Date.now();
     const char = characters[who];
     const newObj = {
       id,
       type,
       color: type === 'orb' ? '#a855f7' : type === 'diamond' ? '#06b6d4' : '#f59e0b',
-      position: { x: char.currentPos.x + 1.5, y: 0.5, z: char.currentPos.z + 1.5 },
+      position: { x: char.currentPos.x + 1.5, y: getTerrainHeight(char.currentPos.x + 1.5, char.currentPos.z + 1.5) + 0.5, z: char.currentPos.z + 1.5 },
       heldBy: null
     };
     syncWorldObjects({ [id]: newObj });
@@ -591,6 +740,7 @@ async function sendHandAction(who, action, objectId = null) {
       body: JSON.stringify({ Who: who, Action: action, ObjectId: objectId })
     });
     if (res.ok) {
+      const data = await res.json();
       const char = characters[who];
       if (char) {
         char.handAction = action;
@@ -600,6 +750,7 @@ async function sendHandAction(who, action, objectId = null) {
         char.heldObjectId = null;
       }
       showToast(`${who} hand: ${action}`);
+      if (data.hitNotification) triggerHitEffect(who, data.hitNotification);
     }
   } catch (err) {
     const char = characters[who];
@@ -608,6 +759,74 @@ async function sendHandAction(who, action, objectId = null) {
       char.heldObjectId = action === 'drop' ? null : objectId;
     }
   }
+}
+
+// --- Throw Object Sender ---
+async function sendThrowRequest(who, force = 16) {
+  try {
+    let dir = null;
+    if (isFirstPerson && who === 'Player') {
+      dir = {
+        x: -Math.sin(fpYaw) * Math.cos(fpPitch),
+        y: Math.sin(fpPitch) + 0.25,
+        z: -Math.cos(fpYaw) * Math.cos(fpPitch)
+      };
+    } else {
+      const char = characters[who];
+      const rad = char ? char.bodyRig.rotation.y : 0;
+      dir = {
+        x: Math.sin(rad),
+        y: 0.35,
+        z: Math.cos(rad)
+      };
+    }
+
+    const res = await fetch('/Throw', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ Who: who, Force: force, Direction: dir })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      const char = characters[who];
+      if (char) {
+        char.handAction = 'throw';
+        char.heldObjectId = null;
+        setTimeout(() => {
+          if (char.handAction === 'throw') char.handAction = 'idle';
+        }, 600);
+      }
+      showToast(`🚀 ${who} threw object!`);
+      if (data.hitNotification) triggerHitEffect(who, data.hitNotification);
+    } else {
+      showToast(data.error || 'Could not throw object');
+    }
+  } catch (err) {
+    showToast('Throw error: ' + err.message);
+  }
+}
+
+// --- Hit Reaction Visual Effect ---
+function triggerHitEffect(charName, message) {
+  const char = characters[charName];
+  if (!char) return;
+  showToast(`💥 ${message || `${charName} was hit by an object!`}`);
+
+  const flashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  char.bodyRig.traverse((child) => {
+    if (child.isMesh && child.material && !child.userData.origMat) {
+      child.userData.origMat = child.material;
+      child.material = flashMat;
+    }
+  });
+  setTimeout(() => {
+    char.bodyRig.traverse((child) => {
+      if (child.isMesh && child.userData.origMat) {
+        child.material = child.userData.origMat;
+        delete child.userData.origMat;
+      }
+    });
+  }, 160);
 }
 
 // --- Universal State Synchronization ---
@@ -690,7 +909,7 @@ function initSSE() {
           }
         }
         if (data.type === 'chat' || (data.who && data.message)) {
-          appendChatMessage(data.who, data.message);
+          appendChatMessage(data.who, data.message, data.id);
           const char = characters[data.who];
           if (char) showSpeechBubble(char, data.message);
         }
@@ -704,6 +923,16 @@ function initSSE() {
           }
           if (data.worldObjects) syncWorldObjects(data.worldObjects);
         }
+        if (data.type === 'throw' || (data.velocity && data.objectId)) {
+          if (data.who) showToast(`🚀 ${data.who} threw an object!`);
+          if (data.worldObjects) syncWorldObjects(data.worldObjects);
+        }
+        if (data.type === 'physics' && data.worldObjects) {
+          syncWorldObjects(data.worldObjects);
+        }
+        if (data.type === 'hit' || data.target) {
+          triggerHitEffect(data.target, data.message);
+        }
       } catch (err) {}
     };
 
@@ -713,6 +942,9 @@ function initSSE() {
     eventSource.addEventListener('chat', (e) => handleEventData(e.data));
     eventSource.addEventListener('spawn', (e) => handleEventData(e.data));
     eventSource.addEventListener('hand', (e) => handleEventData(e.data));
+    eventSource.addEventListener('throw', (e) => handleEventData(e.data));
+    eventSource.addEventListener('physics', (e) => handleEventData(e.data));
+    eventSource.addEventListener('hit', (e) => handleEventData(e.data));
   } catch (err) {}
 }
 initSSE();
@@ -731,8 +963,8 @@ function selectSona(name) {
   if (chatInput) chatInput.placeholder = `Chat as ${name}... (Press Enter to speak)`;
   if (dockHint) {
     dockHint.textContent = name === 'Player'
-      ? 'Player is WASD first-person only • Click First Person to control'
-      : `Click plane to move ${name} • Click objects to hold them`;
+      ? 'Player is WASD first-person only | Click First Person to control'
+      : `Click plane to move ${name} | Click objects to hold | Press Throw to launch`;
   }
 }
 
@@ -767,6 +999,13 @@ document.getElementById('btn-hand-wave').addEventListener('click', () => {
 document.getElementById('btn-hand-up').addEventListener('click', () => {
   sendHandAction(selectedWho, 'handsup');
 });
+
+const btnHandThrow = document.getElementById('btn-hand-throw');
+if (btnHandThrow) {
+  btnHandThrow.addEventListener('click', () => {
+    sendThrowRequest(selectedWho);
+  });
+}
 
 document.getElementById('btn-hand-drop').addEventListener('click', () => {
   sendHandAction(selectedWho, 'drop');
@@ -858,7 +1097,7 @@ window.addEventListener('mousemove', (e) => {
     const intersects = raycaster.intersectObject(planeMesh);
     if (intersects.length > 0) {
       const pt = intersects[0].point;
-      targetBeacon.position.set(pt.x, 0.04, pt.z);
+      targetBeacon.position.set(pt.x, pt.y + 0.05, pt.z);
       targetBeacon.visible = true;
     } else {
       targetBeacon.visible = false;
@@ -868,6 +1107,13 @@ window.addEventListener('mousemove', (e) => {
 
 renderer.domElement.addEventListener('click', (e) => {
   if (isFirstPerson) {
+    const player = characters['Player'];
+    // If player holds an object, throw it forward!
+    if (player && player.heldObjectId) {
+      sendThrowRequest('Player');
+      return;
+    }
+
     // In First Person: Click interacts with objects in center crosshair
     raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
     const objMeshes = Object.values(worldObjectMeshes);
@@ -879,7 +1125,7 @@ renderer.domElement.addEventListener('click', (e) => {
       }
       if (top.userData && top.userData.id) {
         sendHandAction('Player', 'hold', top.userData.id);
-        showToast('Player holding object!');
+        showToast('Player holding object! Click again to throw.');
       }
     }
     return;
@@ -919,8 +1165,9 @@ renderer.domElement.addEventListener('click', (e) => {
   if (groundHits.length > 0) {
     const pt = groundHits[0].point;
     const x = Math.round(pt.x * 10) / 10;
+    const y = Math.round(pt.y * 10) / 10;
     const z = Math.round(pt.z * 10) / 10;
-    const whereStr = `${x}, 0, ${z}`;
+    const whereStr = `${x}, ${y}, ${z}`;
     executeMoveRequest(selectedWho, whereStr);
   }
 });
@@ -988,9 +1235,10 @@ function animate() {
       moveVec.applyAxisAngle(new THREE.Vector3(0, 1, 0), fpYaw);
       player.currentPos.addScaledVector(moveVec, moveSpeed);
 
-      // Clamp to plane bounds
+      // Clamp to plane bounds and align with contoured terrain height
       player.currentPos.x = Math.max(-48, Math.min(48, player.currentPos.x));
       player.currentPos.z = Math.max(-48, Math.min(48, player.currentPos.z));
+      player.currentPos.y = getTerrainHeight(player.currentPos.x, player.currentPos.z);
       player.root.position.copy(player.currentPos);
 
       // Walk bobbing
@@ -1004,7 +1252,7 @@ function animate() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            Where: `${player.currentPos.x.toFixed(1)}, 0, ${player.currentPos.z.toFixed(1)}`,
+            Where: `${player.currentPos.x.toFixed(1)}, ${player.currentPos.y.toFixed(1)}, ${player.currentPos.z.toFixed(1)}`,
             rotationY: fpYaw
           })
         }).catch(() => {});
@@ -1051,6 +1299,7 @@ function animate() {
 
         const step = Math.min(dist, char.speed * delta);
         char.currentPos.addScaledVector(dir, step);
+        char.currentPos.y = getTerrainHeight(char.currentPos.x, char.currentPos.z);
         char.root.position.copy(char.currentPos);
 
         char.walkCycle += delta * 14;
@@ -1061,6 +1310,7 @@ function animate() {
         if (char.isMoving) {
           char.isMoving = false;
           char.currentPos.copy(char.targetPos);
+          char.currentPos.y = getTerrainHeight(char.currentPos.x, char.currentPos.z);
           char.root.position.copy(char.currentPos);
         }
         const idleOffset = key === 'Sam' ? 0 : key === 'Cam' ? 2 : key === 'Evil Sam' ? 4 : 6;
@@ -1085,6 +1335,10 @@ function animate() {
         );
         mesh.rotation.y += delta * 1.5;
       }
+    } else if (char.handAction === 'throw') {
+      // Throw gesture thrust
+      char.rightHand.position.set(0.45, 1.6, 1.1);
+      char.leftHand.position.set(-0.55, 1.1, 0.2);
     } else if (char.handAction === 'wave') {
       // Waving hand
       char.rightHand.position.set(0.85, 2.15, 0.2);
@@ -1102,15 +1356,26 @@ function animate() {
       char.leftHand.position.z = 0;
       char.rightHand.position.z = 0;
     }
+
+    // Articulated finger animations for both hands
+    const currentAction = char.heldObjectId ? 'hold' : char.handAction;
+    animateFingers(char.leftHand, currentAction, time, char.isMoving);
+    animateFingers(char.rightHand, currentAction, time, char.isMoving);
   }
 
-  // 3. Subtle floating rotation for free unheld objects
+  // 3. Subtle floating rotation and terrain grounding for unheld world objects
   for (const id in worldObjects) {
     const objData = worldObjects[id];
     if (!objData.heldBy && worldObjectMeshes[id]) {
       const mesh = worldObjectMeshes[id];
       mesh.rotation.y += delta * 0.8;
-      mesh.position.y = (objData.position?.y || 0.5) + Math.sin(time * 2 + id.charCodeAt(id.length - 1)) * 0.08;
+      const groundY = getTerrainHeight(objData.position?.x || 0, objData.position?.z || 0) + 0.35;
+      const targetY = Math.max(groundY, objData.position?.y || groundY);
+      mesh.position.set(
+        objData.position?.x || 0,
+        targetY + (objData.velocity ? 0 : Math.sin(time * 2 + id.charCodeAt(id.length - 1)) * 0.05),
+        objData.position?.z || 0
+      );
     }
   }
 
