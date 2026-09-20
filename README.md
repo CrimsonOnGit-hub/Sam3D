@@ -56,5 +56,3 @@ curl -X PUT http://localhost:3000/Move \
    npm start
    ```
 2. Open your browser to `http://localhost:3000`.
-
-You can also open `index.html` directly in any modern browser.
