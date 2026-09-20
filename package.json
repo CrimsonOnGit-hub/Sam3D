@@ -1,0 +1,13 @@
+{
+  "name": "sam3d",
+  "version": "1.0.0",
+  "description": "Sam3D - 3D plane with Cam, Sam, and Evil Sam characters responding to HTTP PUT /Move commands",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["threejs", "3d", "spatial", "sam3d"],
+  "author": "CrimsonOnGit-hub",
+  "license": "MIT"
+}
