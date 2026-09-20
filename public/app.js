@@ -494,46 +494,98 @@ function logNetworkRequest(method, url, status, detail, isError = false) {
   }
 }
 
-// --- SSE Real-time Updates ---
+// --- Universal Multi-Instance Real-Time Synchronization Engine ---
+let isInitialStateLoaded = false;
+
+function syncCharactersFromServer(serverCharacters, animate = true) {
+  if (!serverCharacters) return;
+
+  for (const key in serverCharacters) {
+    const sChar = serverCharacters[key];
+    const lChar = characters[key];
+    if (!lChar || !sChar.position) continue;
+
+    const sx = Number(sChar.position.x);
+    const sy = Number(sChar.position.y);
+    const sz = Number(sChar.position.z);
+
+    // Calculate distance to current target position
+    const dx = Math.abs(lChar.targetPos.x - sx);
+    const dy = Math.abs(lChar.targetPos.y - sy);
+    const dz = Math.abs(lChar.targetPos.z - sz);
+
+    // If coordinates on server changed
+    if (dx > 0.05 || dy > 0.05 || dz > 0.05) {
+      if (animate && isInitialStateLoaded) {
+        applyCharacterMove(key, sx, sy, sz, sChar.lastCommand);
+      } else {
+        // Initial setup or direct snap
+        lChar.currentPos.set(sx, sy, sz);
+        lChar.targetPos.set(sx, sy, sz);
+        lChar.root.position.set(sx, sy, sz);
+        updateSonaUICard(key, sx, sy, sz, 'Synchronized');
+      }
+    }
+  }
+  isInitialStateLoaded = true;
+}
+
+async function fetchCurrentState(animate = true) {
+  try {
+    const res = await fetch('/api/characters', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.characters) {
+        syncCharactersFromServer(data.characters, animate);
+      }
+    }
+  } catch (err) {
+    // Offline or server temporarily unreachable
+  }
+}
+
+// Initial fetch to sync immediately with whatever is on the server
+fetchCurrentState(false);
+
+// Continuous polling fallback ensures guaranteed sync across all devices/instances even if SSE drops
+setInterval(() => {
+  fetchCurrentState(true);
+}, 800);
+
+// Sync immediately whenever the tab becomes active/visible
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    fetchCurrentState(true);
+  }
+});
+
+// SSE Live Stream for sub-10ms instant event push
 function initSSE() {
   try {
     const eventSource = new EventSource('/api/stream');
     
-    eventSource.addEventListener('init', (e) => {
+    const handleEventData = (rawData) => {
       try {
-        const data = JSON.parse(e.data);
+        const data = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
         if (data.characters) {
-          for (const key in data.characters) {
-            const charData = data.characters[key];
-            if (characters[key] && charData.position) {
-              characters[key].currentPos.set(charData.position.x, charData.position.y, charData.position.z);
-              characters[key].targetPos.set(charData.position.x, charData.position.y, charData.position.z);
-              characters[key].root.position.copy(characters[key].currentPos);
-              updateSonaUICard(key, charData.position.x, charData.position.y, charData.position.z, 'Synchronized');
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('Failed to parse init stream data', err);
-      }
-    });
-
-    eventSource.addEventListener('move', (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.who && data.where) {
+          syncCharactersFromServer(data.characters, true);
+        } else if (data.who && data.where) {
           applyCharacterMove(data.who, data.where.x, data.where.y, data.where.z, data.command);
         }
       } catch (err) {
-        console.warn('Failed to parse move stream data', err);
+        // Non-JSON or heartbeat ping
       }
-    });
+    };
+
+    eventSource.onmessage = (e) => handleEventData(e.data);
+    eventSource.addEventListener('init', (e) => handleEventData(e.data));
+    eventSource.addEventListener('move', (e) => handleEventData(e.data));
 
     eventSource.onerror = () => {
-      // Reconnect handled automatically by EventSource
+      // EventSource auto-reconnects, while fast polling maintains sync
     };
   } catch (err) {
-    console.log('SSE not available in this environment, using direct execution.');
+    console.log('SSE not available in this environment, relying on sync polling.');
   }
 }
 initSSE();

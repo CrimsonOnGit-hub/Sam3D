@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const STATE_FILE = path.join(__dirname, 'characters.json');
 
 const PORT = process.env.PORT || 3000;
 
@@ -40,14 +41,47 @@ const characters = {
   }
 };
 
+// Persistence functions
+function loadPersistentState() {
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      const raw = fs.readFileSync(STATE_FILE, 'utf-8');
+      const data = JSON.parse(raw);
+      for (const k in data) {
+        if (characters[k] && data[k].position) {
+          characters[k].position = data[k].position;
+          characters[k].lastCommand = data[k].lastCommand || characters[k].lastCommand;
+          characters[k].updatedAt = data[k].updatedAt || Date.now();
+        }
+      }
+      console.log('Loaded persisted character positions from disk.');
+    }
+  } catch (err) {
+    console.warn('Could not read characters.json:', err.message);
+  }
+}
+
+function savePersistentState() {
+  try {
+    fs.writeFileSync(STATE_FILE, JSON.stringify(characters, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Could not save characters.json:', err.message);
+  }
+}
+
+loadPersistentState();
+
 // Connected SSE clients
 const sseClients = new Set();
 
 function broadcastEvent(type, data) {
-  const payload = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
+  const namedPayload = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
+  const defaultPayload = `data: ${JSON.stringify({ type, ...data })}\n\n`;
+  
   for (const client of sseClients) {
     try {
-      client.write(payload);
+      client.write(namedPayload);
+      client.write(defaultPayload);
     } catch {
       sseClients.delete(client);
     }
@@ -82,7 +116,6 @@ function parseWhere(whereInput) {
   }
 
   if (typeof whereInput === 'string') {
-    // Strip brackets or parens if user included them like "[1, 2, 3]" or "(1, 2, 3)"
     const clean = whereInput.replace(/[()[\]{}]/g, '').trim();
     const parts = clean.split(/[,\s]+/).map(p => Number(p)).filter(n => !isNaN(n));
     if (parts.length === 2) {
@@ -126,13 +159,30 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && pathname === '/api/stream') {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no'
     });
+
+    if (res.flushHeaders) res.flushHeaders();
+
+    // Send initial snapshot
+    res.write(`event: init\ndata: ${JSON.stringify({ characters })}\n\n`);
     res.write(`data: ${JSON.stringify({ type: 'init', characters })}\n\n`);
     sseClients.add(res);
 
+    // Keepalive ping every 15s to keep connections open through proxies/load balancers
+    const heartbeatTimer = setInterval(() => {
+      try {
+        res.write(': keepalive\n\n');
+      } catch {
+        clearInterval(heartTimer);
+        sseClients.delete(res);
+      }
+    }, 15000);
+
     req.on('close', () => {
+      clearInterval(heartbeatTimer);
       sseClients.delete(res);
     });
     return;
@@ -140,7 +190,10 @@ const server = http.createServer((req, res) => {
 
   // GET /api/characters
   if (req.method === 'GET' && pathname === '/api/characters') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache'
+    });
     res.end(JSON.stringify({ ok: true, characters }));
     return;
   }
@@ -187,6 +240,9 @@ const server = http.createServer((req, res) => {
         charObj.lastCommand = `[move] ${coords.x}, ${coords.y}, ${coords.z}`;
         charObj.updatedAt = Date.now();
 
+        // Save persistent copy
+        savePersistentState();
+
         const moveEvent = {
           who: whoKey,
           where: coords,
@@ -212,13 +268,11 @@ const server = http.createServer((req, res) => {
 
   // Static file serving
   let reqPath = pathname === '/' ? '/index.html' : pathname;
-  // Prevent directory traversal
   const safePath = path.normalize(reqPath).replace(/^(\.\.[/\\])+/, '');
   let filePath = path.join(PUBLIC_DIR, safePath);
 
   fs.stat(filePath, (err, stats) => {
     if (err || !stats.isFile()) {
-      // Fallback to index.html for SPA if not found
       filePath = path.join(PUBLIC_DIR, 'index.html');
     }
 
