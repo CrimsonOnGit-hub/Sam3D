@@ -251,11 +251,18 @@ function updatePhysics() {
       const dist = Math.hypot(px - cx, py - cy, pz - cz);
       const hitRadius = 1.15;
 
-      const isThrower = obj.thrownBy === charName;
-      const timeSinceThrow = Date.now() - (obj.thrownAt || 0);
+      // A thrown object must NEVER collide with its own thrower
+      if (obj.thrownBy === charName) {
+        continue;
+      }
 
-      // Bounce off character if within radius (and not immediate thrower cooldown)
-      if (dist < hitRadius && (!isThrower || timeSinceThrow > 350)) {
+      // Prevent immediate repetitive collisions on the same target within 600ms
+      if (obj.lastHitTarget === charName && (Date.now() - (obj.lastHitTime || 0)) < 600) {
+        continue;
+      }
+
+      // Bounce off character if within radius
+      if (dist < hitRadius) {
         const nx = (px - cx) / (dist || 1);
         const ny = (py - cy) / (dist || 1);
         const nz = (pz - cz) / (dist || 1);
@@ -287,9 +294,10 @@ function updatePhysics() {
         char.hitCount = (char.hitCount || 0) + 1;
         char.updatedAt = Date.now();
 
-        // Change thrownBy to this character so it doesn't immediately re-hit same frame
-        obj.thrownBy = charName;
-        obj.thrownAt = Date.now();
+        // Object has bounced off target: clear thrower attribution so it is neutral
+        obj.thrownBy = null;
+        obj.lastHitTarget = charName;
+        obj.lastHitTime = Date.now();
 
         savePersistentState();
         broadcastEvent('hit', hitInfo);
@@ -514,8 +522,8 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         Who: whoKey,
         Where: whereStr,
-        lastHit: charObj.lastHit,
-        hitNotification: charObj.lastHit ? charObj.lastHit.message : null,
+        lastHit: (charObj.lastHit && Date.now() - charObj.lastHit.timestamp < 3500) ? charObj.lastHit : null,
+        hitNotification: (charObj.lastHit && Date.now() - charObj.lastHit.timestamp < 3500) ? charObj.lastHit.message : null,
         character: charObj
       }));
     } catch (err) {
@@ -559,8 +567,8 @@ const server = http.createServer(async (req, res) => {
           ok: true,
           Who: 'Player',
           Where: `${coords.x}, ${coords.y}, ${coords.z}`,
-          lastHit: charObj.lastHit,
-          hitNotification: charObj.lastHit ? charObj.lastHit.message : null
+          lastHit: (charObj.lastHit && Date.now() - charObj.lastHit.timestamp < 3500) ? charObj.lastHit : null,
+          hitNotification: (charObj.lastHit && Date.now() - charObj.lastHit.timestamp < 3500) ? charObj.lastHit.message : null
         }));
         return;
       }
@@ -672,8 +680,8 @@ const server = http.createServer(async (req, res) => {
         Step: stepDist,
         BodyPosition: charObj.position,
         Feet: charObj.feet,
-        lastHit: charObj.lastHit,
-        hitNotification: charObj.lastHit ? charObj.lastHit.message : null,
+        lastHit: (charObj.lastHit && Date.now() - charObj.lastHit.timestamp < 3500) ? charObj.lastHit : null,
+        hitNotification: (charObj.lastHit && Date.now() - charObj.lastHit.timestamp < 3500) ? charObj.lastHit.message : null,
         message: `${whoKey} stepped forward ${stepDist}m with ${stepFoot} foot. Body position is now [${newBodyX}, ${newBodyY}, ${newBodyZ}].`
       }));
     } catch (err) {
@@ -844,8 +852,8 @@ const server = http.createServer(async (req, res) => {
         Who: whoKey,
         Action: handState.action,
         HeldObjectId: handState.heldObjectId,
-        lastHit: characters[whoKey]?.lastHit,
-        hitNotification: characters[whoKey]?.lastHit ? characters[whoKey].lastHit.message : null
+        lastHit: (characters[whoKey]?.lastHit && Date.now() - characters[whoKey].lastHit.timestamp < 3500) ? characters[whoKey].lastHit : null,
+        hitNotification: (characters[whoKey]?.lastHit && Date.now() - characters[whoKey].lastHit.timestamp < 3500) ? characters[whoKey].lastHit.message : null
       }));
     } catch (err) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -881,9 +889,7 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           ok: false,
-          error: `${whoKey} is not holding an object and none are within reach. Pick up or spawn an object first!`,
-          lastHit: charObj.lastHit,
-          hitNotification: charObj.lastHit?.message || null
+          error: `${whoKey} is not holding an object and none are within reach. Pick up or spawn an object first!`
         }));
         return;
       }
@@ -905,10 +911,11 @@ const server = http.createServer(async (req, res) => {
 
       const obj = worldObjects[heldId];
       obj.heldBy = null;
+      const forwardOffset = 1.8;
       obj.position = {
-        x: Math.round((charObj.position.x + nx * 1.0) * 100) / 100,
-        y: Math.round((charObj.position.y + 1.4) * 100) / 100,
-        z: Math.round((charObj.position.z + nz * 1.0) * 100) / 100
+        x: Math.round((charObj.position.x + nx * forwardOffset) * 100) / 100,
+        y: Math.round((charObj.position.y + 1.35) * 100) / 100,
+        z: Math.round((charObj.position.z + nz * forwardOffset) * 100) / 100
       };
       obj.velocity = {
         x: Math.round(nx * force * 100) / 100,
@@ -939,8 +946,6 @@ const server = http.createServer(async (req, res) => {
         Who: whoKey,
         ThrownObject: heldId,
         Force: force,
-        lastHit: charObj.lastHit,
-        hitNotification: charObj.lastHit ? charObj.lastHit.message : null,
         message: `${whoKey} threw ${obj.type} (${heldId}) with force ${force}!`
       }));
     } catch (err) {

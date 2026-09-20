@@ -12,7 +12,18 @@
       "rotationY": 0,
       "lastCommand": "[move] 2, 0, 3",
       "lastMessage": null,
-      "updatedAt": 1789933373032
+      "updatedAt": 1789934396367,
+      "lastHit": {
+        "id": "hit-1789934396367",
+        "target": "Sam",
+        "thrownBy": "Player",
+        "objectId": "obj-1789934396120-bhhd",
+        "objectType": "orb",
+        "speed": 9.3,
+        "message": "Sam was hit by a orb thrown by Player!",
+        "timestamp": 1789934396367
+      },
+      "hitCount": 1
     },
     "Cam": {
       "name": "Cam",
@@ -26,21 +37,7 @@
       "rotationY": 0,
       "lastCommand": "[feet] left foot step +1.2m -> [-5.82, -0.15, -2.4]",
       "lastMessage": null,
-      "updatedAt": 1789933373043,
-      "feet": {
-        "left": {
-          "x": -6,
-          "y": -0.17,
-          "z": -1.8
-        },
-        "right": {
-          "x": -5.65,
-          "y": 0,
-          "z": -3
-        },
-        "lastStep": "left",
-        "stepCount": 1
-      }
+      "updatedAt": 1789933373043
     },
     "Evil Sam": {
       "name": "Evil Sam",
@@ -54,35 +51,24 @@
       "rotationY": 0,
       "lastCommand": "[move] 6, 0, 3",
       "lastMessage": null,
-      "updatedAt": 1789933385769,
-      "lastHit": {
-        "id": "hit-1789933385769",
-        "target": "Evil Sam",
-        "thrownBy": "Evil Sam",
-        "objectId": "obj-1789933384149-drw7",
-        "objectType": "cube",
-        "speed": 4.6,
-        "message": "Evil Sam was hit by a cube thrown by Evil Sam!",
-        "timestamp": 1789933385769
-      },
-      "hitCount": 2
+      "updatedAt": 1789933385769
     },
     "Player": {
       "name": "Player",
       "color": "#f59e0b",
       "accentColor": "#fbbf24",
       "position": {
-        "x": 0,
+        "x": 2,
         "y": 0,
-        "z": 6
+        "z": 8
       },
-      "rotationY": 0,
-      "lastCommand": "[wasd] 0, 0, 6",
+      "rotationY": 3.141592653589793,
+      "lastCommand": "[wasd] 2, 0, 8",
       "lastMessage": {
         "message": "Hello world from Player!",
         "timestamp": 1789933369801
       },
-      "updatedAt": 1789933369801
+      "updatedAt": 1789934396111
     }
   },
   "worldObjects": {
@@ -129,18 +115,45 @@
       "color": "#f59e0b",
       "position": {
         "x": 6.41,
-        "y": 2.28,
+        "y": 0.5,
         "z": 3
       },
       "heldBy": null,
-      "createdAt": 1789933384149,
-      "velocity": {
-        "x": 1.0641636206520113,
-        "y": -5.6797579723380975,
-        "z": 0
+      "createdAt": 1789933384149
+    },
+    "obj-1789934385411-qhkr": {
+      "id": "obj-1789934385411-qhkr",
+      "type": "cube",
+      "color": "#00ffcc",
+      "position": {
+        "x": 0,
+        "y": 0.4,
+        "z": -24
       },
-      "thrownBy": "Evil Sam",
-      "thrownAt": 1789933385769
+      "heldBy": null,
+      "createdAt": 1789934385411,
+      "thrownAt": 1789934385504
+    },
+    "obj-1789934396120-bhhd": {
+      "id": "obj-1789934396120-bhhd",
+      "type": "orb",
+      "color": "#a855f7",
+      "position": {
+        "x": 2,
+        "y": 1.67,
+        "z": 4.4
+      },
+      "heldBy": null,
+      "createdAt": 1789934396120,
+      "velocity": {
+        "x": 0,
+        "y": 1.6299999999999997,
+        "z": -11.99
+      },
+      "thrownBy": null,
+      "thrownAt": 1789934396166,
+      "lastHitTarget": "Sam",
+      "lastHitTime": 1789934396367
     }
   },
   "characterHands": {
@@ -160,9 +173,9 @@
       "updatedAt": 1789932264903
     },
     "Player": {
-      "action": "idle",
+      "action": "throw",
       "heldObjectId": null,
-      "updatedAt": 1789932255630
+      "updatedAt": 1789934396147
     }
   },
   "chatMessages": [

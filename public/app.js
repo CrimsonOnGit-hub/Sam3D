@@ -656,7 +656,6 @@ async function executeMoveRequest(who, whereStr) {
         applyCharacterMove(returnWho, targetCoords.x, targetCoords.y, targetCoords.z);
       }
       showToast(`${returnWho} moved to [${returnWhere}]`);
-      if (data.hitNotification) triggerHitEffect(returnWho, data.hitNotification);
     } else {
       const errData = await res.json().catch(() => ({}));
       showToast(`Error: ${errData.error || `HTTP ${res.status}`}`);
@@ -750,7 +749,6 @@ async function sendHandAction(who, action, objectId = null) {
         char.heldObjectId = null;
       }
       showToast(`${who} hand: ${action}`);
-      if (data.hitNotification) triggerHitEffect(who, data.hitNotification);
     }
   } catch (err) {
     const char = characters[who];
@@ -797,7 +795,6 @@ async function sendThrowRequest(who, force = 16) {
         }, 600);
       }
       showToast(`🚀 ${who} threw object!`);
-      if (data.hitNotification) triggerHitEffect(who, data.hitNotification);
     } else {
       showToast(data.error || 'Could not throw object');
     }
